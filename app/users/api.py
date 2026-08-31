@@ -9,39 +9,46 @@ from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.users import service as user_service
+from app.users.repository import UserRepository
 from app.users.schemas import UserProfileCreate, UserResponse
 
 
 class UsersAPI:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.repo = UserRepository(db)
 
     async def get_user_by_id(self, user_id: uuid.UUID) -> Optional[UserResponse]:
         """Obtiene el DTO del usuario por su UUID."""
-        user = await user_service.get_by_id(self.db, user_id)
+        user = await self.repo.get_by_id(user_id)
         return UserResponse.model_validate(user) if user else None
 
     async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
         """Busca un usuario por su email retornando un DTO."""
-        user = await user_service.get_by_email(self.db, email)
+        user = await self.repo.get_by_email(email)
         return UserResponse.model_validate(user) if user else None
 
     async def is_user_active(self, user_id: uuid.UUID) -> bool:
         """Verifica si el usuario existe y está habilitado."""
-        user = await user_service.get_by_id(self.db, user_id)
+        user = await self.repo.get_by_id(user_id)
         return bool(user and user.is_active)
 
-    async def validate_active_users(self, user_ids: list[uuid.UUID]) -> bool:
+    async def validate_active_users(self, user_ids: Sequence[uuid.UUID | str]) -> bool:
         """Valida que todos los IDs correspondan a usuarios existentes y activos."""
         if not user_ids:
             return True
-        users = await user_service.get_multi_by_ids(self.db, user_ids)
+
+        parsed_ids = [
+            uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid))
+            for uid in user_ids
+        ]
+        users = await self.repo.get_by_ids(parsed_ids)
         active_ids = {u.id for u in users if u.is_active}
-        return set(user_ids) == active_ids
+        return set(parsed_ids) == active_ids
 
     async def user_has_role(self, user_id: uuid.UUID, role_name: str) -> bool:
         """Verifica si el usuario tiene asignado un rol específico."""
-        user = await user_service.get_by_id(self.db, user_id)
+        user = await self.repo.get_by_id(user_id)
         if not user:
             return False
         return any(role.name == role_name for role in user.roles)

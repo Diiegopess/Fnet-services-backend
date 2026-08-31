@@ -192,3 +192,9 @@ async def get_multi_by_ids(db: AsyncSession, user_ids: list[uuid.UUID]) -> Seque
         return []
     repo = UserRepository(db)
     return await repo.get_by_ids(user_ids)
+
+async def get_multi_by_ids(self, user_ids: Sequence[str | uuid.UUID]) -> Sequence[User]:
+    if not user_ids:
+        return []
+    parsed_ids = [uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid)) for uid in user_ids]
+    return await self.repo.get_by_ids(parsed_ids)

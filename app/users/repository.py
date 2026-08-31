@@ -33,6 +33,18 @@ class UserRepository(BaseRepository[User, UserProfileCreate, UserUpdateAdmin]):
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_ids(self, user_ids: Sequence[uuid.UUID]) -> Sequence[User]:
+        """Recupera un conjunto de usuarios por sus UUIDs cargando roles y permisos."""
+        if not user_ids:
+            return []
+        stmt = (
+            select(User)
+            .options(selectinload(User.roles).selectinload(Role.permissions))
+            .where(User.id.in_(user_ids))
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
     async def get_by_email(self, email: str) -> Optional[User]:
         stmt = (
             select(User)
