@@ -4,12 +4,11 @@ Módulo de Repositorio para el Dominio de Clientes.
 
 import uuid
 from typing import Optional, Sequence
-from sqlalchemy import or_, select
+from sqlalchemy import delete, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.clients.models import Client
-from app.users.models import User
+from app.clients.models import Client, client_technicians
 
 
 class ClientRepository:
@@ -65,28 +64,34 @@ class ClientRepository:
         return res.scalars().all()
 
     async def create(self, client: Client) -> Client:
-        """Persiste un nuevo cliente."""
         self.db.add(client)
         await self.db.commit()
         await self.db.refresh(client)
-        return await self.get_by_id(client.id)  # Recarga con relaciones listas
+        return await self.get_by_id(client.id)
 
     async def update(self, client: Client) -> Client:
-        """Actualiza un cliente persistido."""
         self.db.add(client)
         await self.db.commit()
         await self.db.refresh(client)
         return await self.get_by_id(client.id)
 
     async def delete(self, client: Client) -> None:
-        """Elimina un cliente de la base de datos."""
         await self.db.delete(client)
         await self.db.commit()
 
-    async def get_users_by_ids(self, user_ids: list[uuid.UUID]) -> Sequence[User]:
-        """Obtiene las entidades User para la asignación en client_technicians."""
-        if not user_ids:
-            return []
-        stmt = select(User).where(User.id.in_(user_ids), User.is_active.is_(True))
-        res = await self.db.execute(stmt)
-        return res.scalars().all()
+    async def set_assigned_technicians(
+        self, client_id: uuid.UUID, technician_ids: list[uuid.UUID]
+    ) -> None:
+        """Sincroniza la tabla asociativa client_technicians de forma directa."""
+        # 1. Eliminar asignaciones previas
+        del_stmt = delete(client_technicians).where(client_technicians.c.client_id == client_id)
+        await self.db.execute(del_stmt)
+
+        # 2. Insertar nuevas asignaciones si la lista no está vacía
+        if technician_ids:
+            ins_stmt = insert(client_technicians).values(
+                [{"client_id": client_id, "user_id": t_id} for t_id in technician_ids]
+            )
+            await self.db.execute(ins_stmt)
+
+        await self.db.commit()

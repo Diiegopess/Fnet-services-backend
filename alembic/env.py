@@ -12,8 +12,11 @@ from app.infrastructure.db.database import Base
 
 # 2. IMPORTANTE: Importar TODOS los modelos para que Alembic los detecte
 from app.auth.models import AuthCredential  # noqa: F401
-from app.users.models import User            # noqa: F401
-from app.audit.models import AuditLog        # noqa: F401
+from app.users.models import User  # noqa: F401
+from app.audit.models import AuditLog  # noqa: F401
+from app.clients.models import Client, client_technicians  # noqa: F401
+from app.devices.models import FortigateDevice  # noqa: F401
+from app.devices.vdoms.models import DeviceVDOM  # noqa: F401
 
 # Objeto de configuración de Alembic
 config = context.config

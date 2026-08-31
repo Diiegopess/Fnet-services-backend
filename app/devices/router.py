@@ -1,0 +1,123 @@
+"""
+Controlador HTTP para Chasis Físicos FortiGate.
+"""
+
+import uuid
+from typing import List
+from fastapi import APIRouter, Depends, Query, Request, status
+
+from app.core.events.base import EventMetadata
+from app.core.rbac.dependencies import RequirePermissions
+from app.core.rbac.permissions import PermissionEnum
+from app.devices.dependencies import get_device_service
+from app.devices.schemas import (
+    ConnectivityCheckResult,
+    DeviceCreate,
+    DeviceResponse,
+    DeviceTestConnectionRequest,
+    DeviceUpdate,
+)
+from app.devices.service import DeviceService
+from app.users.models import User
+
+router = APIRouter(prefix="/devices", tags=["Devices"])
+
+
+def _extract_metadata(request: Request, user: User) -> EventMetadata:
+    return EventMetadata(
+        actor_id=str(user.id),
+        actor_email=user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+@router.post(
+    "/test-connection",
+    response_model=ConnectivityCheckResult,
+    summary="Probar conectividad y credenciales contra un FortiGate sin persistirlo",
+)
+async def test_device_connection(
+    payload: DeviceTestConnectionRequest,
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_TEST_CONNECTION)),
+    service: DeviceService = Depends(get_device_service),
+):
+    return await service.test_connectivity(
+        host=payload.host,
+        port=payload.port,
+        api_token=payload.api_token,
+    )
+
+
+@router.post(
+    "",
+    response_model=DeviceResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar un nuevo chasis FortiGate",
+)
+async def create_device(
+    payload: DeviceCreate,
+    request: Request,
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_CREATE)),
+    service: DeviceService = Depends(get_device_service),
+):
+    metadata = _extract_metadata(request, current_user)
+    return await service.create_device(data=payload, metadata=metadata)
+
+
+@router.get(
+    "",
+    response_model=List[DeviceResponse],
+    summary="Listar dispositivos físicos registrados",
+)
+async def list_devices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
+    service: DeviceService = Depends(get_device_service),
+):
+    return await service.get_multi(skip=skip, limit=limit)
+
+
+@router.get(
+    "/{device_id}",
+    response_model=DeviceResponse,
+    summary="Obtener detalle de un dispositivo por ID",
+)
+async def get_device(
+    device_id: uuid.UUID,
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
+    service: DeviceService = Depends(get_device_service),
+):
+    return await service.get_by_id_or_fail(device_id)
+
+
+@router.patch(
+    "/{device_id}",
+    response_model=DeviceResponse,
+    summary="Actualizar parámetros de conexión de un dispositivo",
+)
+async def update_device(
+    device_id: uuid.UUID,
+    payload: DeviceUpdate,
+    request: Request,
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_UPDATE)),
+    service: DeviceService = Depends(get_device_service),
+):
+    metadata = _extract_metadata(request, current_user)
+    return await service.update_device(device_id=device_id, data=payload, metadata=metadata)
+
+
+@router.delete(
+    "/{device_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un dispositivo y todas sus VDOMs asociadas",
+)
+async def delete_device(
+    device_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_DELETE)),
+    service: DeviceService = Depends(get_device_service),
+):
+    metadata = _extract_metadata(request, current_user)
+    await service.delete_device(device_id=device_id, metadata=metadata)

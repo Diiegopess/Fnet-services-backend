@@ -185,3 +185,10 @@ async def list_roles(db: AsyncSession) -> Sequence[Role]:
     """Retorna todo el catálogo de roles disponibles."""
     repo = UserRepository(db)
     return await repo.list_all_roles()
+
+async def get_multi_by_ids(db: AsyncSession, user_ids: list[uuid.UUID]) -> Sequence[User]:
+    """Retorna los usuarios existentes para una lista de UUIDs."""
+    if not user_ids:
+        return []
+    repo = UserRepository(db)
+    return await repo.get_by_ids(user_ids)

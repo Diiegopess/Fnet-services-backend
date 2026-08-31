@@ -10,15 +10,20 @@ Define la estructura de:
 
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import TYPE_CHECKING, List
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.database import Base
 
+if TYPE_CHECKING:
+    from app.clients.models import Client
 
-# --- TABLAS DE ASOCIACIÓN N:M ---
+
+# ==============================================================================
+# 1. TABLAS DE ASOCIACIÓN N:M (Deben definirse primero)
+# ==============================================================================
 
 user_roles = Table(
     "user_roles",
@@ -55,7 +60,9 @@ role_permissions = Table(
 )
 
 
-# --- ENTIDADES PRINCIPALES ---
+# ==============================================================================
+# 2. ENTIDADES PRINCIPALES
+# ==============================================================================
 
 class Permission(Base):
     __tablename__ = "permissions"
@@ -132,6 +139,14 @@ class User(Base):
         "Role",
         secondary=user_roles,
         back_populates="users",
+        lazy="selectin",
+    )
+
+    # Relación inversa Many-to-Many con Clientes
+    assigned_clients: Mapped[List["Client"]] = relationship(
+        "Client",
+        secondary="client_technicians",
+        back_populates="assigned_technicians",
         lazy="selectin",
     )
 

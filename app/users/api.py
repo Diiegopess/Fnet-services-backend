@@ -5,7 +5,7 @@ Punto único de contacto interno para otros módulos del sistema.
 """
 
 import uuid
-from typing import Optional
+from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.users import service as user_service
@@ -31,6 +31,14 @@ class UsersAPI:
         user = await user_service.get_by_id(self.db, user_id)
         return bool(user and user.is_active)
 
+    async def validate_active_users(self, user_ids: list[uuid.UUID]) -> bool:
+        """Valida que todos los IDs correspondan a usuarios existentes y activos."""
+        if not user_ids:
+            return True
+        users = await user_service.get_multi_by_ids(self.db, user_ids)
+        active_ids = {u.id for u in users if u.is_active}
+        return set(user_ids) == active_ids
+
     async def user_has_role(self, user_id: uuid.UUID, role_name: str) -> bool:
         """Verifica si el usuario tiene asignado un rol específico."""
         user = await user_service.get_by_id(self.db, user_id)
@@ -47,10 +55,6 @@ class UsersAPI:
         is_superuser: bool = False,
         role_names: list[str] | None = None,
     ) -> UserResponse:
-        """
-        Crea el perfil de usuario encapsulando el schema internamente.
-        Otros módulos no necesitan importar schemas de 'users'.
-        """
         profile_in = UserProfileCreate(
             id=user_id,
             email=email,

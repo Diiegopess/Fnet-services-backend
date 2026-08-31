@@ -124,15 +124,19 @@ class ClientService:
         technician_ids: list[uuid.UUID],
         metadata: Optional[EventMetadata] = None,
     ) -> Client:
-        """Asocia técnicos activos a un cliente tras validar existencia."""
+        """Asocia técnicos activos a un cliente tras validar existencia mediante UsersAPI."""
         client = await self.get_by_id_or_fail(client_id)
 
-        users = await self.repo.get_users_by_ids(technician_ids)
-        if len(users) != len(technician_ids):
-            raise InvalidTechnicianAssignmentError()
+        # Validación desacoplada usando la fachada de Users
+        all_valid = await self.users_api.validate_active_users(technician_ids)
+        if not all_valid:
+            raise InvalidTechnicianAssignmentError(
+                "Uno o más técnicos no existen, están inactivos o tienen identificadores inválidos."
+            )
 
-        client.assigned_technicians = list(users)
-        updated_client = await self.repo.update(client)
+        # Persistencia en tabla asociativa
+        await self.repo.set_assigned_technicians(client_id=client.id, technician_ids=technician_ids)
+        updated_client = await self.get_by_id_or_fail(client_id)
 
         if self.publisher and metadata:
             event = DomainEvent(
