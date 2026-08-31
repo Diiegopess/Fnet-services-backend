@@ -2,11 +2,9 @@
 Módulo de Servicios para el Dominio de Autenticación.
 
 Gestiona la verificación de credenciales locales, validación de tokens
-de Google OAuth 2.0 y la emisión de eventos de dominio hacia el broker
-para desacoplar la creación de perfiles (Users) y la auditoría (Audit).
+de Google OAuth 2.0 y el aprovisionamiento de perfiles vía UsersFacade.
 """
 
-import uuid
 from google.auth.transport import requests
 from google.oauth2 import id_token
 from sqlalchemy import select
@@ -24,6 +22,7 @@ from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.exceptions import AppException
 from app.core.security import hash_password, verify_password
+from app.users.api import UsersAPI
 
 
 # ==============================================================================
@@ -51,6 +50,7 @@ class AuthService:
     def __init__(self, db: AsyncSession, publisher: IEventPublisher):
         self.db = db
         self.publisher = publisher
+        self.users_api = UsersAPI(db)
 
     async def register_user(
         self,
@@ -103,7 +103,7 @@ class AuthService:
         email: str,
         password: str,
         metadata: EventMetadata,
-    ) -> AuthCredential:  # Retornamos la entidad completa
+    ) -> AuthCredential:
         """
         Autentica credenciales locales y publica el evento 'auth.login_success'.
         """
@@ -129,15 +129,16 @@ class AuthService:
         )
         await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)
 
-        return account  # <--- Retornamos 'account' completo
+        return account
 
     async def authenticate_google_user(
         self,
         token: str,
         metadata: EventMetadata,
-    ) -> uuid.UUID:
+    ) -> AuthCredential:
         """
-        Valida token de Google, crea/vincula la cuenta y emite los eventos correspondientes.
+        Valida token de Google, vincula o crea credenciales y perfil de forma síncrona
+        vía UsersFacade, y emite los eventos de auditoría correspondientes.
         """
         id_info = verify_google_token(token)
         if not id_info:
@@ -186,7 +187,23 @@ class AuthService:
         if not account.is_active:
             raise InactiveUserError()
 
-        # 4. Publicar evento si es nuevo usuario registrado con Google
+        # 4. Asegurar perfil síncrono en Users mediante la Fachada
+        existing_profile = await self.users_api.get_user_by_id(account.id)
+        if not existing_profile:
+            given_name = id_info.get("given_name") or ""
+            family_name = id_info.get("family_name") or ""
+            full_name = f"{given_name} {family_name}".strip() or email.split("@")[0]
+
+            await self.users_api.create_profile(
+                user_id=account.id,
+                email=account.email,
+                full_name=full_name,
+                is_active=True,
+                is_superuser=False,
+                role_names=["USER"],
+            )
+
+        # 5. Publicar evento si es nuevo usuario registrado con Google
         if is_new_user:
             register_event = DomainEvent(
                 event_type="auth.user_registered",
@@ -201,7 +218,7 @@ class AuthService:
             )
             await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=register_event)
 
-        # 5. Publicar evento de login exitoso
+        # 6. Publicar evento de login exitoso
         login_event = DomainEvent(
             event_type="auth.login_success",
             metadata=metadata,
@@ -211,7 +228,6 @@ class AuthService:
                 "auth_provider": "google",
             },
         )
-        # Al final de authenticate_google_user:
         await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=login_event)
 
-        return account  # Retornamos el objeto AuthCredential completo
+        return account

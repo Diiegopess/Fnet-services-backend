@@ -8,20 +8,17 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.audit.router import router as audit_router
-from app.auth.router import router as auth_router
 from app.core.config import settings
 from app.core.handlers import register_exception_handlers
 from app.core.schemas import HealthCheckResponse
 from app.infrastructure.brokers.redis_consumer import RedisStreamConsumer
-from app.users.router import router as users_router
-
-
 from app.infrastructure.db.init_db import init_db
+from app.api.v1.api_router import api_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Startup: Crear tablas y generar superusuario
+    # Startup: Crear tablas, seeder de RBAC y superusuario
     await init_db()
 
     # Startup: Iniciar consumidor de Redis Streams
@@ -39,13 +36,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         pass
 
 
-
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan,
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,14 +50,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 register_exception_handlers(app)
 
-
-app.include_router(auth_router, prefix=settings.API_V1_STR)
-app.include_router(users_router, prefix=settings.API_V1_STR)
-app.include_router(audit_router, prefix=settings.API_V1_STR)
-
+# Incluir todas las rutas v1 centralizadas
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get(

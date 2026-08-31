@@ -1,10 +1,43 @@
 """
-Módulo de Esquemas Pydantic v2 para el Dominio de Usuarios.
+Módulo de Esquemas Pydantic v2 para el Dominio de Usuarios y RBAC.
 """
 
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+# --- ESQUEMAS PARA PERMISOS ---
+class PermissionBase(BaseModel):
+    code: str = Field(..., description="Código único del permiso (ej: users:read)")
+    description: str = Field(..., description="Descripción funcional del permiso")
+
+
+class PermissionResponse(PermissionBase):
+    id: uuid.UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- ESQUEMAS PARA ROLES ---
+class RoleBase(BaseModel):
+    name: str = Field(..., description="Nombre del rol (ej: ADMIN, AUDITOR)")
+    description: str | None = Field(default=None, description="Descripción del rol")
+
+
+class RoleResponse(RoleBase):
+    id: uuid.UUID
+    permissions: list[PermissionResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleAssignSchema(BaseModel):
+    role_names: list[str] = Field(
+        ...,
+        description="Lista de nombres de roles a asignar (reemplaza los existentes)",
+        examples=[["ADMIN", "AUDITOR"]],
+    )
 
 
 # --- 1. ESQUEMA BASE (Atributos Compartidos) ---
@@ -35,6 +68,11 @@ class UserCreateAdmin(BaseModel):
     last_name: str | None = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
+    role_names: list[str] = Field(
+        default=[],
+        description="Roles iniciales a asignar al usuario",
+        examples=[["AUDITOR"]],
+    )
 
 
 # --- 3. ESQUEMA PARA CREACIÓN INTERNA DE PERFIL ---
@@ -47,6 +85,7 @@ class UserProfileCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
+    role_names: list[str] = Field(default=[])
 
 
 # --- 4. ESQUEMA PARA ACTUALIZACIÓN DE PERFIL (PATCH/PUT) ---
@@ -68,6 +107,7 @@ class UserUpdateAdmin(UserUpdate):
 class UserResponse(UserBase):
     id: uuid.UUID
     is_superuser: bool
+    roles: list[RoleResponse] = []
     created_at: datetime
     updated_at: datetime
 

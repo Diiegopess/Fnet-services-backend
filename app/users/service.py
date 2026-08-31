@@ -1,13 +1,12 @@
 """
-Módulo de Servicios para el Dominio de Usuarios.
+Módulo de Servicios para el Dominio de Usuarios y RBAC.
 
 Contiene las operaciones de base de datos y reglas de negocio
-exclusivas para perfiles de usuario (tabla 'users').
+para perfiles de usuario (tabla 'users') y gestión de roles.
 """
 
 import uuid
 from typing import Sequence
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -15,7 +14,8 @@ from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.security import hash_password
 from app.users.exceptions import UserAlreadyExistsError, UserNotFoundError
-from app.users.models import User
+from app.users.models import Role, User
+from app.users.repository import UserRepository
 from app.users.schemas import (
     UserCreateAdmin,
     UserProfileCreate,
@@ -25,13 +25,13 @@ from app.users.schemas import (
 
 
 # ==============================================================================
-# 1. CONSULTAS DE LECTURA
+# 1. CONSULTAS DE LECTURA (Usando UserRepository con carga de RBAC)
 # ==============================================================================
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
-    """Busca un usuario por su UUID primario."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalars().first()
+    """Busca un usuario por su UUID primario cargando roles y permisos."""
+    repo = UserRepository(db)
+    return await repo.get_by_id(user_id=user_id)
 
 
 async def get_by_id_or_fail(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -43,17 +43,17 @@ async def get_by_id_or_fail(db: AsyncSession, user_id: uuid.UUID) -> User:
 
 
 async def get_by_email(db: AsyncSession, email: str) -> User | None:
-    """Busca un usuario por su correo electrónico."""
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalars().first()
+    """Busca un usuario por su correo electrónico con roles y permisos."""
+    repo = UserRepository(db)
+    return await repo.get_by_email(email=email)
 
 
 async def get_multi(
     db: AsyncSession, skip: int = 0, limit: int = 100
 ) -> Sequence[User]:
-    """Retorna una lista paginada de usuarios."""
-    result = await db.execute(select(User).offset(skip).limit(limit))
-    return result.scalars().all()
+    """Retorna una lista paginada de usuarios con sus roles y permisos."""
+    repo = UserRepository(db)
+    return await repo.get_multi(skip=skip, limit=limit)
 
 
 # ==============================================================================
@@ -62,7 +62,8 @@ async def get_multi(
 
 async def create_profile(db: AsyncSession, profile_in: UserProfileCreate) -> User:
     """Crea un perfil de usuario asignándole el UUID recibido desde Auth."""
-    existing_user = await get_by_email(db, email=profile_in.email)
+    repo = UserRepository(db)
+    existing_user = await repo.get_by_email(email=profile_in.email)
     if existing_user:
         raise UserAlreadyExistsError()
 
@@ -73,10 +74,14 @@ async def create_profile(db: AsyncSession, profile_in: UserProfileCreate) -> Use
         is_active=profile_in.is_active,
         is_superuser=profile_in.is_superuser,
     )
+
+    if profile_in.role_names:
+        roles = await repo.get_roles_by_names(profile_in.role_names)
+        db_user.roles = list(roles)
+
     db.add(db_user)
     await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    return await get_by_id_or_fail(db, db_user.id)
 
 
 async def admin_create_user(
@@ -86,9 +91,11 @@ async def admin_create_user(
     publisher: IEventPublisher,
 ) -> User:
     """
-    Crea el usuario administrativamente y publica el evento para que Auth provisione las credenciales.
+    Crea el usuario administrativamente con sus roles iniciales y publica el
+    evento para que Auth provisione las credenciales.
     """
-    existing_user = await get_by_email(db, email=user_in.email)
+    repo = UserRepository(db)
+    existing_user = await repo.get_by_email(email=user_in.email)
     if existing_user:
         raise UserAlreadyExistsError()
 
@@ -106,9 +113,14 @@ async def admin_create_user(
         is_active=user_in.is_active,
         is_superuser=user_in.is_superuser,
     )
+
+    # Asignar roles iniciales si se indicaron
+    if user_in.role_names:
+        roles = await repo.get_roles_by_names(user_in.role_names)
+        db_user.roles = list(roles)
+
     db.add(db_user)
     await db.commit()
-    await db.refresh(db_user)
 
     # 2. Publicar evento a Redis Streams para sincronizar Auth y registrar Auditoría
     event = DomainEvent(
@@ -123,11 +135,11 @@ async def admin_create_user(
     )
     await publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)
 
-    return db_user
+    return await get_by_id_or_fail(db, db_user.id)
 
 
 # ==============================================================================
-# 3. ACTUALIZACIÓN DE PERFILES
+# 3. ACTUALIZACIÓN DE PERFILES Y GESTIÓN DE ROLES
 # ==============================================================================
 
 async def update_user(
@@ -136,10 +148,11 @@ async def update_user(
     user_in: UserUpdate | UserUpdateAdmin,
 ) -> User:
     """Actualiza los datos del perfil de un usuario validando unicidad de email."""
+    repo = UserRepository(db)
     db_user = await get_by_id_or_fail(db, user_id)
 
     if user_in.email and user_in.email != db_user.email:
-        existing_email = await get_by_email(db, email=user_in.email)
+        existing_email = await repo.get_by_email(email=user_in.email)
         if existing_email:
             raise UserAlreadyExistsError()
 
@@ -150,5 +163,25 @@ async def update_user(
 
     db.add(db_user)
     await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    return await get_by_id_or_fail(db, db_user.id)
+
+
+async def assign_roles_to_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    role_names: list[str],
+) -> User:
+    """Asigna una lista de roles a un usuario reemplazando los anteriores."""
+    repo = UserRepository(db)
+    db_user = await get_by_id_or_fail(db, user_id)
+    roles = await repo.get_roles_by_names(role_names)
+
+    await repo.assign_roles_to_user(user=db_user, roles=list(roles))
+    await db.commit()
+    return await get_by_id_or_fail(db, user_id)
+
+
+async def list_roles(db: AsyncSession) -> Sequence[Role]:
+    """Retorna todo el catálogo de roles disponibles."""
+    repo = UserRepository(db)
+    return await repo.list_all_roles()

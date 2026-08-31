@@ -4,18 +4,18 @@ services:
   # --- SERVICIO 1: Base de Datos PostgreSQL ---
   postgres:
     image: postgres:16-alpine
-    container_name: app_log_postgres
+    container_name: fnet_services_postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-app_log_db}
+      POSTGRES_DB: ${POSTGRES_DB:-fnet_services_db}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - fnet_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app_log_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fnet_services_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,13 +23,13 @@ services:
   # --- SERVICIO 2: Redis (Streams + Cache) ---
   redis:
     image: redis:7-alpine
-    container_name: app_log_redis
+    container_name: fnet_services_redis
     restart: always
     command: redis-server --appendonly yes  # Persistencia AOF para eventos en Redis Streams
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - fnet_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -41,7 +41,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: app_log_api
+    container_name: fnet_services_api
     restart: always
     ports:
       - "8000:8000"
@@ -51,8 +51,7 @@ services:
     env_file:
       - .env
     environment:
-      # Sobrescribimos las URLs para la red interna de Docker
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-app_log_db}"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-fnet_services_db}"
       REDIS_URL: "redis://redis:6379/0"
     volumes:
       - ./app:/app/app  # Recarga en vivo al modificar código local
@@ -63,5 +62,5 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
-  redis_data:
+  fnet_postgres_data:
+  fnet_redis_data:
