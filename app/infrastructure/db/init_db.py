@@ -29,6 +29,11 @@ BASE_ROLES_PERMISSIONS: dict[str, list[PermissionEnum]] = {
         PermissionEnum.CLIENTS_DELETE,
         PermissionEnum.CLIENTS_ASSIGN_TECHNICIAN,
     ],
+    "TECHNICIAN": [
+        PermissionEnum.USERS_READ,
+        PermissionEnum.CLIENTS_READ,
+        PermissionEnum.CLIENTS_UPDATE,
+    ],
     "AUDITOR": [
         PermissionEnum.AUDIT_READ,
         PermissionEnum.AUDIT_EXPORT,

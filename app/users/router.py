@@ -44,7 +44,8 @@ async def admin_create_user(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     metadata = EventMetadata(
-        user_id=str(current_user.id),
+        actor_id=str(current_user.id),
+        actor_email=current_user.email,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
