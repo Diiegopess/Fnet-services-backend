@@ -6,12 +6,12 @@ import uuid
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rbac.context import AuthenticatedUser
 from app.core.security import decrypt_secret
 from app.devices.repository import DeviceRepository
 from app.devices.vdoms.authorization import VDOMAuthorizationService
 from app.devices.vdoms.context import VDOMContext
 from app.devices.vdoms.repository import VDOMRepository
-from app.users.models import User
 
 
 class DevicesAPI:
@@ -21,7 +21,9 @@ class DevicesAPI:
         self.vdom_repo = VDOMRepository(db)
         self.auth_service = VDOMAuthorizationService(db)
 
-    async def get_vdom_context_for_user(self, vdom_id: uuid.UUID, user: User) -> Optional[VDOMContext]:
+    async def get_vdom_context_for_user(
+        self, vdom_id: uuid.UUID, user: AuthenticatedUser
+    ) -> Optional[VDOMContext]:
         """Obtiene el contexto validado de un VDOM para ejecutar operaciones seguras."""
         return await self.auth_service.get_authorized_context(vdom_id=vdom_id, current_user=user)
 

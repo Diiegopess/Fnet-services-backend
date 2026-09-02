@@ -1,9 +1,14 @@
+"""
+Módulo de Inicialización de la Base de Datos y Seeding del Catálogo RBAC.
+"""
+
 import logging
 import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.audit.models import AuditLog  # noqa: F401 - Registra la tabla 'audit_logs'
+# Importación de modelos para el registro global de metadatos SQLAlchemy
+from app.audit.models import AuditLog  # noqa: F401
 from app.auth.models import AuthCredential
 from app.core.config import settings
 from app.core.rbac.permissions import PermissionEnum
@@ -13,7 +18,6 @@ from app.users.models import Permission, Role, User
 
 logger = logging.getLogger(__name__)
 
-# Mapeo de roles base y sus permisos asignados
 BASE_ROLES_PERMISSIONS: dict[str, list[PermissionEnum]] = {
     "ADMIN": [
         PermissionEnum.USERS_READ,
@@ -47,111 +51,111 @@ BASE_ROLES_PERMISSIONS: dict[str, list[PermissionEnum]] = {
 }
 
 
-async def init_db() -> None:
-    """
-    Crea tablas DDL, sincroniza el catálogo RBAC (permisos y roles)
-    y genera el superusuario inicial.
-    """
-    # 1. Crear tablas si no existen
+async def _create_tables() -> None:
+    """Verifica y crea las tablas si no existen (ideal para entornos de desarrollo)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("Tablas de la base de datos verificadas/creadas exitosamente.")
+    logger.info("[INIT_DB] Estructura de tablas verificada/creada.")
+
+
+async def _seed_rbac(session) -> dict[str, Role]:
+    """Sincroniza permisos y roles optimizando las consultas SQL."""
+    # 1. Cargar todos los permisos existentes en 1 sola consulta
+    res_perm = await session.execute(select(Permission))
+    existing_perms = {p.code: p for p in res_perm.scalars().all()}
+
+    # 2. Registrar permisos faltantes
+    for perm_enum in PermissionEnum:
+        if perm_enum.value not in existing_perms:
+            perm = Permission(
+                code=perm_enum.value,
+                description=f"Permiso para la acción {perm_enum.value}",
+            )
+            session.add(perm)
+            existing_perms[perm_enum.value] = perm
+            logger.info(f"[SEED_RBAC] Permiso creado: {perm_enum.value}")
+
+    await session.flush()
+
+    # 3. Cargar todos los roles existentes con sus permisos
+    res_role = await session.execute(
+        select(Role).options(selectinload(Role.permissions))
+    )
+    existing_roles = {r.name: r for r in res_role.scalars().all()}
+
+    # 4. Sincronizar roles y sus asociaciones
+    db_roles: dict[str, Role] = {}
+    for role_name, perm_enums in BASE_ROLES_PERMISSIONS.items():
+        target_permissions = [
+            existing_perms[p.value]
+            for p in perm_enums
+            if p.value in existing_perms
+        ]
+
+        if role_name not in existing_roles:
+            role = Role(
+                name=role_name,
+                description=f"Rol del sistema {role_name}",
+                permissions=target_permissions,
+            )
+            session.add(role)
+            logger.info(f"[SEED_RBAC] Rol creado: {role_name}")
+        else:
+            role = existing_roles[role_name]
+            role.permissions = target_permissions
+            session.add(role)
+
+        db_roles[role_name] = role
+
+    await session.flush()
+    return db_roles
+
+
+async def _seed_superuser(session, admin_role: Role | None) -> None:
+    """Genera el superusuario e inicializa sus credenciales si no existe."""
+    stmt_cred = select(AuthCredential).where(
+        AuthCredential.email == settings.FIRST_SUPERUSER_EMAIL
+    )
+    res_cred = await session.execute(stmt_cred)
+    if res_cred.scalar_one_or_none():
+        logger.info(f"[SEED_SUPERUSER] Superusuario ya existe: {settings.FIRST_SUPERUSER_EMAIL}")
+        return
+
+    user_id = uuid.uuid4()
+
+    cred = AuthCredential(
+        id=user_id,
+        email=settings.FIRST_SUPERUSER_EMAIL,
+        password_hash=hash_password(settings.FIRST_SUPERUSER_PASSWORD),
+        is_active=True,
+        is_email_verified=True,
+    )
+    session.add(cred)
+
+    user_profile = User(
+        id=user_id,
+        email=settings.FIRST_SUPERUSER_EMAIL,
+        full_name=settings.FIRST_SUPERUSER_FULL_NAME,
+        is_active=True,
+        is_superuser=True,
+        roles=[admin_role] if admin_role else [],
+    )
+    session.add(user_profile)
+
+    logger.info(f"[SEED_SUPERUSER] Superusuario creado: {settings.FIRST_SUPERUSER_EMAIL}")
+
+
+async def init_db() -> None:
+    """Función orquestadora principal para la inicialización de la BD."""
+    await _create_tables()
 
     async with AsyncSessionLocal() as session:
         try:
-            # 2. Seeding del catálogo de Permisos
-            db_permissions: dict[str, Permission] = {}
-            for perm_enum in PermissionEnum:
-                stmt_perm = select(Permission).where(Permission.code == perm_enum.value)
-                res_perm = await session.execute(stmt_perm)
-                permission = res_perm.scalar_one_or_none()
-
-                if not permission:
-                    permission = Permission(
-                        code=perm_enum.value,
-                        description=f"Permiso para la acción {perm_enum.value}",
-                    )
-                    session.add(permission)
-                    await session.flush()
-                    logger.info(f"Permiso registrado: {perm_enum.value}")
-
-                db_permissions[perm_enum.value] = permission
-
-            # 3. Seeding del catálogo de Roles y asignación de permisos
-            db_roles: dict[str, Role] = {}
-            for role_name, perm_enums in BASE_ROLES_PERMISSIONS.items():
-                stmt_role = (
-                    select(Role)
-                    .options(selectinload(Role.permissions))
-                    .where(Role.name == role_name)
-                )
-                res_role = await session.execute(stmt_role)
-                role = res_role.scalar_one_or_none()
-
-                target_permissions = [
-                    db_permissions[p.value]
-                    for p in perm_enums
-                    if p.value in db_permissions
-                ]
-
-                if not role:
-                    role = Role(
-                        name=role_name,
-                        description=f"Rol del sistema {role_name}",
-                        permissions=target_permissions,
-                    )
-                    session.add(role)
-                    await session.flush()
-                    logger.info(f"Rol registrado: {role_name}")
-                else:
-                    role.permissions = target_permissions
-                    session.add(role)
-
-                db_roles[role_name] = role
-
-            # 4. Seeding de Superusuario Inicial
-            stmt_cred = select(AuthCredential).where(
-                AuthCredential.email == settings.FIRST_SUPERUSER_EMAIL
-            )
-            res_cred = await session.execute(stmt_cred)
-            existing_cred = res_cred.scalar_one_or_none()
-
-            if existing_cred:
-                logger.info(
-                    f"Superusuario inicial ya registrado: {settings.FIRST_SUPERUSER_EMAIL}"
-                )
-                await session.commit()
-                return
-
-            user_id = uuid.uuid4()
-
-            # Credenciales de autenticación
-            cred = AuthCredential(
-                id=user_id,
-                email=settings.FIRST_SUPERUSER_EMAIL,
-                password_hash=hash_password(settings.FIRST_SUPERUSER_PASSWORD),
-                is_active=True,
-                is_email_verified=True,
-            )
-            session.add(cred)
-
-            # Perfil con rol ADMIN asociado
-            user_profile = User(
-                id=user_id,
-                email=settings.FIRST_SUPERUSER_EMAIL,
-                full_name=settings.FIRST_SUPERUSER_FULL_NAME,
-                is_active=True,
-                is_superuser=True,
-                roles=[db_roles["ADMIN"]] if "ADMIN" in db_roles else [],
-            )
-            session.add(user_profile)
-
+            db_roles = await _seed_rbac(session)
+            await _seed_superuser(session, db_roles.get("ADMIN"))
             await session.commit()
-            logger.info(
-                f"Superusuario inicial y asignación RBAC creados: {settings.FIRST_SUPERUSER_EMAIL}"
-            )
-
+            logger.info("[INIT_DB] Inicialización de BD completada exitosamente.")
         except Exception as e:
             await session.rollback()
-            logger.error(f"Error al inicializar datos y RBAC: {e}")
+            logger.error(f"[INIT_DB_ERROR] Fallo en la inicialización de la BD: {e}", exc_info=True)
             raise

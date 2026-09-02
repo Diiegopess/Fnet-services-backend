@@ -1,13 +1,12 @@
 """
 Adaptador de Broker de Eventos basado en Redis Streams.
-
-Implementa el contrato IEventPublisher para desacoplar los dominios
-y permitir auditoría y sincronización asíncrona de datos.
 """
 
 import json
 import logging
+from datetime import datetime
 from redis.asyncio import Redis
+
 from app.core.events.base import DomainEvent
 from app.core.events.interfaces import IEventPublisher
 
@@ -21,39 +20,50 @@ class RedisStreamPublisher(IEventPublisher):
         self.redis_client = redis_client
 
     async def publish(self, stream_or_topic: str, event: DomainEvent) -> str:
-        """
-        Publica un evento en el Stream indicado de Redis.
-        
-        Usa maxlen aproximado (~) para evitar que el stream crezca 
-        indefinidamente en RAM una vez procesado por los workers.
-        """
         try:
-            # Serializamos el evento a un formato plano compatible con Redis Streams
+            # Garantizar que occurred_at sea un string ISO
+            occurred_at_str = (
+                event.occurred_at.isoformat()
+                if isinstance(event.occurred_at, datetime)
+                else str(event.occurred_at)
+            )
+
+            # Extracción segura de metadatos (Pydantic v2 / v1)
+            if hasattr(event.metadata, "model_dump"):
+                metadata_dict = event.metadata.model_dump()
+            elif hasattr(event.metadata, "dict"):
+                metadata_dict = event.metadata.dict()
+            elif isinstance(event.metadata, dict):
+                metadata_dict = event.metadata
+            else:
+                metadata_dict = {}
+
             event_data = {
-                "event_id": event.event_id,
-                "event_type": event.event_type,
-                "occurred_at": event.occurred_at,
-                "metadata": json.dumps(event.metadata.model_dump()),
-                "payload": json.dumps(event.payload)
+                "event_id": str(event.event_id),
+                "event_type": str(event.event_type),
+                "occurred_at": occurred_at_str,
+                "metadata": json.dumps(metadata_dict),
+                "payload": json.dumps(event.payload if event.payload is not None else {}),
             }
 
-            # XADD stream_name * campo valor campo valor ...
-            # maxlen=100000 mantiene un búfer rotativo en memoria
             message_id = await self.redis_client.xadd(
                 name=stream_or_topic,
                 fields=event_data,
                 maxlen=100000,
-                approximate=True
+                approximate=True,
             )
-            
+
+            # Decodificar el message_id si Redis lo retorna como bytes
+            msg_id_str = message_id.decode("utf-8") if isinstance(message_id, bytes) else str(message_id)
+
             logger.info(
-                f"[EVENT_PUBLISHED] {event.event_type} publicado en '{stream_or_topic}' con ID: {message_id}"
+                f"[EVENT_PUBLISHED] '{event.event_type}' publicado en '{stream_or_topic}' con ID: {msg_id_str}"
             )
-            return str(message_id)
-            
+            return msg_id_str
+
         except Exception as e:
             logger.error(
-                f"[EVENT_PUBLISH_ERROR] Fallo al publicar {event.event_type} en '{stream_or_topic}': {str(e)}",
-                exc_info=True
+                f"[EVENT_PUBLISH_ERROR] Fallo al publicar '{event.event_type}' en '{stream_or_topic}': {str(e)}",
+                exc_info=True,
             )
             raise e

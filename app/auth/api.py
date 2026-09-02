@@ -1,3 +1,4 @@
+# app/auth/api.py
 """
 API Pública del Módulo de Autenticación.
 
@@ -7,8 +8,21 @@ Punto único de contacto interno para otros módulos del backend.
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import (
+    RequirePermissions,
+    get_current_user,
+    get_current_user_id,
+)
 from app.auth.repository import AuthRepository
 from app.core.security import hash_password
+
+# Re-exportamos las dependencias HTTP de autenticación para uso de otros módulos
+__all__ = [
+    "AuthAPI",
+    "get_current_user_id",
+    "get_current_user",
+    "RequirePermissions",
+]
 
 
 class AuthAPI:

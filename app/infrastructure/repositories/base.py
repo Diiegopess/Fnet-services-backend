@@ -1,13 +1,10 @@
 """
 Módulo del Repositorio Base Genérico.
-
-Provee operaciones CRUD asíncronas reutilizables para todos los módulos
-mediante SQLAlchemy 2.0 y TypeVar.
 """
 
-from typing import Any, Generic, List, Optional, Type, TypeVar
+from typing import Any, Generic, List, Optional, Sequence, Type, TypeVar
 from pydantic import BaseModel
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.db.database import Base
 
@@ -17,45 +14,68 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+    """Repositorio base con operaciones CRUD desacopladas del control transaccional directos."""
+
     def __init__(self, model: Type[ModelType], db: AsyncSession):
         self.model = model
         self.db = db
 
     async def get_by_id(self, id: Any) -> Optional[ModelType]:
+        """Obtiene un registro por su clave primaria."""
         stmt = select(self.model).where(self.model.id == id)
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
-    async def get_all(self, skip: int = 0, limit: int = 100) -> List[ModelType]:
+    async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]:
+        """Obtiene una lista paginada de registros."""
         stmt = select(self.model).offset(skip).limit(limit)
         result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
-    async def create(self, schema: CreateSchemaType) -> ModelType:
-        data = schema.model_dump(exclude_unset=True)
+    async def create(self, schema: CreateSchemaType | dict) -> ModelType:
+        """Crea un nuevo objeto en la sesión sin realizar commit explícito."""
+        if isinstance(schema, dict):
+            data = schema
+        elif hasattr(schema, "model_dump"):
+            data = schema.model_dump(exclude_unset=True)
+        else:
+            data = schema.dict(exclude_unset=True)
+
         db_obj = self.model(**data)
         self.db.add(db_obj)
-        await self.db.commit()
+        # flush envía los cambios a la BD para generar IDs sin cerrar la transacción
+        await self.db.flush()
         await self.db.refresh(db_obj)
         return db_obj
 
-    async def update(self, id: Any, schema: UpdateSchemaType) -> Optional[ModelType]:
-        data = schema.model_dump(exclude_unset=True)
-        if not data:
-            return await self.get_by_id(id)
+    async def update(self, id: Any, schema: UpdateSchemaType | dict) -> Optional[ModelType]:
+        """Actualiza un objeto existente a través del ciclo de vida del ORM."""
+        db_obj = await self.get_by_id(id)
+        if not db_obj:
+            return None
 
-        stmt = (
-            update(self.model)
-            .where(self.model.id == id)
-            .values(**data)
-            .execution_options(synchronize_session="fetch")
-        )
-        await self.db.execute(stmt)
-        await self.db.commit()
-        return await self.get_by_id(id)
+        if isinstance(schema, dict):
+            data = schema
+        elif hasattr(schema, "model_dump"):
+            data = schema.model_dump(exclude_unset=True)
+        else:
+            data = schema.dict(exclude_unset=True)
+
+        for field, value in data.items():
+            if hasattr(db_obj, field):
+                setattr(db_obj, field, value)
+
+        self.db.add(db_obj)
+        await self.db.flush()
+        await self.db.refresh(db_obj)
+        return db_obj
 
     async def delete(self, id: Any) -> bool:
-        stmt = delete(self.model).where(self.model.id == id)
-        result = await self.db.execute(stmt)
-        await self.db.commit()
-        return result.rowcount > 0
+        """Elimina un registro por su ID."""
+        db_obj = await self.get_by_id(id)
+        if not db_obj:
+            return False
+
+        await self.db.delete(db_obj)
+        await self.db.flush()
+        return True

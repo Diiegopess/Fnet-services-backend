@@ -12,6 +12,8 @@ VALID_TOKENS = {"test-token-123", "fortigate-secret-token", "valid-token"}
 
 @app.get("/api/v2/monitor/system/status")
 async def get_system_status(authorization: str = Header(None)):
+    print(f"DEBUG MOCK -> Header recibido: '{authorization}'", flush=True)
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -19,24 +21,14 @@ async def get_system_status(authorization: str = Header(None)):
         )
 
     token = authorization.replace("Bearer ", "").strip()
+    print(f"DEBUG MOCK -> Token extraido: '{token}' | Es valido: {token in VALID_TOKENS}", flush=True)
+
     if token not in VALID_TOKENS and not token.startswith("valid"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized: Invalid FortiOS REST API token",
         )
-
-    return {
-        "http_method": "GET",
-        "status": "success",
-        "version": "v7.2.4",
-        "results": {
-            "serial": "FG100ETK19001234",
-            "version": "7.2.4",
-            "build": 1396,
-            "vdom_mode": "split-vdom",
-            "hostname": "FW-LAB-MOCK-01",
-        },
-    }
+    # ...
 
 
 @app.get("/api/v2/cmdb/system/vdom")

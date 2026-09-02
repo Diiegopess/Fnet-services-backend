@@ -25,7 +25,7 @@ from app.users.schemas import (
 
 
 # ==============================================================================
-# 1. CONSULTAS DE LECTURA (Usando UserRepository con carga de RBAC)
+# 1. CONSULTAS DE LECTURA (Usando UserRepository)
 # ==============================================================================
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -56,6 +56,20 @@ async def get_multi(
     return await repo.get_multi(skip=skip, limit=limit)
 
 
+async def get_multi_by_ids(
+    db: AsyncSession, user_ids: Sequence[str | uuid.UUID]
+) -> Sequence[User]:
+    """Retorna los usuarios existentes para una lista de UUIDs o strings de UUID."""
+    if not user_ids:
+        return []
+    repo = UserRepository(db)
+    parsed_ids = [
+        uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid))
+        for uid in user_ids
+    ]
+    return await repo.get_by_ids(parsed_ids)
+
+
 # ==============================================================================
 # 2. CREACIÓN Y APROVISIONAMIENTO DE PERFILES
 # ==============================================================================
@@ -79,9 +93,8 @@ async def create_profile(db: AsyncSession, profile_in: UserProfileCreate) -> Use
         roles = await repo.get_roles_by_names(profile_in.role_names)
         db_user.roles = list(roles)
 
-    db.add(db_user)
-    await db.commit()
-    return await get_by_id_or_fail(db, db_user.id)
+    created_user = await repo.create(db_user)
+    return await get_by_id_or_fail(db, created_user.id)
 
 
 async def admin_create_user(
@@ -119,23 +132,22 @@ async def admin_create_user(
         roles = await repo.get_roles_by_names(user_in.role_names)
         db_user.roles = list(roles)
 
-    db.add(db_user)
-    await db.commit()
+    created_user = await repo.create(db_user)
 
     # 2. Publicar evento a Redis Streams para sincronizar Auth y registrar Auditoría
     event = DomainEvent(
         event_type="user.created_by_admin",
         metadata=metadata,
         payload={
-            "user_id": str(db_user.id),
-            "email": db_user.email,
+            "user_id": str(created_user.id),
+            "email": created_user.email,
             "password_hash": hash_password(user_in.password),
-            "is_active": db_user.is_active,
+            "is_active": created_user.is_active,
         },
     )
     await publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)
 
-    return await get_by_id_or_fail(db, db_user.id)
+    return await get_by_id_or_fail(db, created_user.id)
 
 
 # ==============================================================================
@@ -161,9 +173,8 @@ async def update_user(
     for field, value in update_data.items():
         setattr(db_user, field, value)
 
-    db.add(db_user)
-    await db.commit()
-    return await get_by_id_or_fail(db, db_user.id)
+    updated_user = await repo.update(db_user)
+    return await get_by_id_or_fail(db, updated_user.id)
 
 
 async def assign_roles_to_user(
@@ -177,7 +188,6 @@ async def assign_roles_to_user(
     roles = await repo.get_roles_by_names(role_names)
 
     await repo.assign_roles_to_user(user=db_user, roles=list(roles))
-    await db.commit()
     return await get_by_id_or_fail(db, user_id)
 
 
@@ -185,16 +195,3 @@ async def list_roles(db: AsyncSession) -> Sequence[Role]:
     """Retorna todo el catálogo de roles disponibles."""
     repo = UserRepository(db)
     return await repo.list_all_roles()
-
-async def get_multi_by_ids(db: AsyncSession, user_ids: list[uuid.UUID]) -> Sequence[User]:
-    """Retorna los usuarios existentes para una lista de UUIDs."""
-    if not user_ids:
-        return []
-    repo = UserRepository(db)
-    return await repo.get_by_ids(user_ids)
-
-async def get_multi_by_ids(self, user_ids: Sequence[str | uuid.UUID]) -> Sequence[User]:
-    if not user_ids:
-        return []
-    parsed_ids = [uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid)) for uid in user_ids]
-    return await self.repo.get_by_ids(parsed_ids)

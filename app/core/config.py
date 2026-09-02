@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     # --- Proyecto ---
     PROJECT_NAME: str = "App_Log API"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = "development"
 
     # --- Seguridad y JWT ---
     SECRET_KEY: str
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
 
     # --- Base de Datos en Memoria (Redis) ---
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_POOL_SIZE: int = 20
 
     # --- Broker de Eventos ---
     BROKER_TYPE: str = "REDIS"

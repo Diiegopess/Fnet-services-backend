@@ -3,23 +3,24 @@ Servicio de Negocio para el Subdominio de VDOMs.
 """
 
 import uuid
-from typing import Sequence
+from typing import Optional, Sequence
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.api import ClientsAPI
-from app.clients.exceptions import ClientNotFoundError
-from app.core.events.base import EventMetadata
+from app.core.config import settings
+from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
+from app.core.security import decrypt_secret
 from app.devices.exceptions import DeviceNotFoundError, VDOMAlreadyExistsError, VDOMNotFoundError
-from app.devices.models import FortigateDevice
 from app.devices.repository import DeviceRepository
 from app.devices.vdoms.models import DeviceVDOM
 from app.devices.vdoms.repository import VDOMRepository
-from app.devices.vdoms.schemas import VDOMCreate, VDOMUpdate
+from app.devices.vdoms.schemas import VDOMCreate, VDOMSyncResult, VDOMUpdate
 
 
 class VDOMService:
-    def __init__(self, db: AsyncSession, publisher: IEventPublisher):
+    def __init__(self, db: AsyncSession, publisher: Optional[IEventPublisher] = None):
         self.db = db
         self.publisher = publisher
         self.vdom_repo = VDOMRepository(db)
@@ -38,13 +39,15 @@ class VDOMService:
             raise DeviceNotFoundError()
         return await self.vdom_repo.list_by_device(device_id)
 
-    async def create_vdom(self, data: VDOMCreate, metadata: EventMetadata) -> DeviceVDOM:
+    async def create_vdom(
+        self, data: VDOMCreate, metadata: Optional[EventMetadata] = None
+    ) -> DeviceVDOM:
         device = await self.device_repo.get_by_id(data.device_id)
         if not device:
             raise DeviceNotFoundError()
 
-        if not await self.clients_api.is_client_active(data.client_id):
-            raise ClientNotFoundError("El cliente asociado no existe o está inactivo.")
+        # Validación desacoplada mediante fachada del módulo de clientes
+        await self.clients_api.validate_client_is_active(data.client_id)
 
         existing_vdoms = await self.vdom_repo.list_by_device(data.device_id)
         if any(v.name.lower() == data.name.lower() for v in existing_vdoms):
@@ -59,52 +62,133 @@ class VDOMService:
         )
         created_vdom = await self.vdom_repo.create(vdom)
 
-        # Disparar evento de auditoría
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="vdom.created",
-            payload={
-                "vdom_id": str(created_vdom.id),
-                "vdom_name": created_vdom.name,
-                "device_id": str(created_vdom.device_id),
-                "client_id": str(created_vdom.client_id),
-            },
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="vdom.created",
+                metadata=metadata,
+                payload={
+                    "vdom_id": str(created_vdom.id),
+                    "vdom_name": created_vdom.name,
+                    "device_id": str(created_vdom.device_id),
+                    "client_id": str(created_vdom.client_id),
+                },
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )
 
         return created_vdom
 
-    async def update_vdom(self, vdom_id: uuid.UUID, data: VDOMUpdate, metadata: EventMetadata) -> DeviceVDOM:
+    async def sync_device_vdoms(
+        self, device_id: uuid.UUID, metadata: Optional[EventMetadata] = None
+    ) -> VDOMSyncResult:
+        """Descubre y sincroniza VDOMs desde el FortiGate físico."""
+        device = await self.device_repo.get_by_id(device_id)
+        if not device:
+            raise DeviceNotFoundError()
+
+        token = decrypt_secret(device.encrypted_api_token)
+        is_mock_or_local = (
+            "mock" in device.host.lower()
+            or device.host in ("127.0.0.1", "localhost", "testserver")
+            or device.port in (80, 8080)
+        )
+        scheme = "http" if is_mock_or_local else "https"
+        url = f"{scheme}://{device.host}:{device.port}/api/v2/cmdb/system/vdom"
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+        async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        raw_vdoms = data.get("results", [])
+        existing_vdoms = {v.name: v for v in await self.vdom_repo.list_by_device(device_id)}
+
+        new_count = 0
+        unaltered_count = 0
+
+        for item in raw_vdoms:
+            vdom_name = item.get("name")
+            if not vdom_name:
+                continue
+
+            if vdom_name in existing_vdoms:
+                unaltered_count += 1
+            else:
+                new_vdom = DeviceVDOM(
+                    device_id=device.id,
+                    client_id=None,
+                    name=vdom_name,
+                    is_root=(vdom_name == "root"),
+                    is_active=True,
+                )
+                await self.vdom_repo.create(new_vdom)
+                new_count += 1
+
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="vdom.synced",
+                metadata=metadata,
+                payload={"device_id": str(device_id), "discovered": len(raw_vdoms)},
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )
+
+        return VDOMSyncResult(
+            device_id=device_id,
+            total_found=len(raw_vdoms),
+            new_registered=new_count,
+            existing_unaltered=unaltered_count,
+        )
+
+    async def update_vdom(
+        self, vdom_id: uuid.UUID, data: VDOMUpdate, metadata: Optional[EventMetadata] = None
+    ) -> DeviceVDOM:
         vdom = await self.get_by_id_or_fail(vdom_id)
 
         if data.client_id is not None:
-            if not await self.clients_api.is_client_active(data.client_id):
-                raise ClientNotFoundError("El nuevo cliente asociado no existe o está inactivo.")
+            await self.clients_api.validate_client_is_active(data.client_id)
             vdom.client_id = data.client_id
 
         if data.is_active is not None:
             vdom.is_active = data.is_active
 
-        self.db.add(vdom)
-        await self.db.commit()
-        await self.db.refresh(vdom)
+        updated_vdom = await self.vdom_repo.update(vdom)
 
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="vdom.updated",
-            payload={"vdom_id": str(vdom.id), "client_id": str(vdom.client_id), "is_active": vdom.is_active},
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="vdom.updated",
+                metadata=metadata,
+                payload={
+                    "vdom_id": str(updated_vdom.id),
+                    "client_id": str(updated_vdom.client_id),
+                    "is_active": updated_vdom.is_active,
+                },
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )
 
-        return vdom
+        return updated_vdom
 
-    async def delete_vdom(self, vdom_id: uuid.UUID, metadata: EventMetadata) -> None:
+    async def delete_vdom(
+        self, vdom_id: uuid.UUID, metadata: Optional[EventMetadata] = None
+    ) -> None:
         vdom = await self.get_by_id_or_fail(vdom_id)
         await self.vdom_repo.delete(vdom)
 
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="vdom.deleted",
-            payload={"vdom_id": str(vdom_id), "name": vdom.name},
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="vdom.deleted",
+                metadata=metadata,
+                payload={"vdom_id": str(vdom_id), "name": vdom.name},
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )

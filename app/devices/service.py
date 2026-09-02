@@ -3,12 +3,12 @@ Servicio de Negocio para el Dominio de Dispositivos (Chasis Fortinet).
 """
 
 import uuid
-from typing import Sequence
+from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.api import ClientsAPI
-from app.clients.exceptions import ClientNotFoundError
-from app.core.events.base import EventMetadata
+from app.clients.api import ClientsAPI, ClientNotFoundError
+from app.core.config import settings
+from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.security import encrypt_secret
 from app.devices.connectors.base import IDeviceProber
@@ -24,12 +24,12 @@ class DeviceService:
     def __init__(
         self,
         db: AsyncSession,
-        publisher: IEventPublisher,
         prober: IDeviceProber,
+        publisher: Optional[IEventPublisher] = None,
     ):
         self.db = db
-        self.publisher = publisher
         self.prober = prober
+        self.publisher = publisher
         self.repo = DeviceRepository(db)
         self.vdom_repo = VDOMRepository(db)
         self.clients_api = ClientsAPI(db)
@@ -47,7 +47,9 @@ class DeviceService:
     async def get_multi(self, skip: int = 0, limit: int = 50) -> Sequence[FortigateDevice]:
         return await self.repo.get_multi(skip=skip, limit=limit)
 
-    async def create_device(self, data: DeviceCreate, metadata: EventMetadata) -> FortigateDevice:
+    async def create_device(
+        self, data: DeviceCreate, metadata: Optional[EventMetadata] = None
+    ) -> FortigateDevice:
         existing = await self.repo.get_by_host(data.host)
         if existing:
             raise DeviceAlreadyExistsError()
@@ -56,8 +58,7 @@ class DeviceService:
         if not data.has_vdom_enabled:
             if not data.default_client_id:
                 raise ClientNotFoundError("Se requiere 'default_client_id' para dispositivos en modo standalone/root.")
-            if not await self.clients_api.is_client_active(data.default_client_id):
-                raise ClientNotFoundError()
+            await self.clients_api.validate_client_is_active(data.default_client_id)
 
         # Intento de sonda no bloqueante para auto-descubrir serial real
         probe_result = await self.prober.probe(host=data.host, port=data.port, api_token=data.api_token)
@@ -89,22 +90,28 @@ class DeviceService:
             await self.vdom_repo.create(root_vdom)
             created_device = await self.repo.get_by_id(created_device.id)
 
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="device.created",
-            payload={
-                "device_id": str(created_device.id),
-                "name": created_device.name,
-                "host": created_device.host,
-                "serial_number": created_device.serial_number,
-                "has_vdom_enabled": created_device.has_vdom_enabled,
-            },
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="device.created",
+                metadata=metadata,
+                payload={
+                    "device_id": str(created_device.id),
+                    "name": created_device.name,
+                    "host": created_device.host,
+                    "serial_number": created_device.serial_number,
+                    "has_vdom_enabled": created_device.has_vdom_enabled,
+                },
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )
 
         return created_device
 
-    async def update_device(self, device_id: uuid.UUID, data: DeviceUpdate, metadata: EventMetadata) -> FortigateDevice:
+    async def update_device(
+        self, device_id: uuid.UUID, data: DeviceUpdate, metadata: Optional[EventMetadata] = None
+    ) -> FortigateDevice:
         device = await self.get_by_id_or_fail(device_id)
 
         if data.host and data.host != device.host:
@@ -128,22 +135,32 @@ class DeviceService:
 
         updated_device = await self.repo.update(device)
 
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="device.updated",
-            payload={"device_id": str(device_id), "name": updated_device.name},
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="device.updated",
+                metadata=metadata,
+                payload={"device_id": str(device_id), "name": updated_device.name},
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )
 
         return updated_device
 
-    async def delete_device(self, device_id: uuid.UUID, metadata: EventMetadata) -> None:
+    async def delete_device(
+        self, device_id: uuid.UUID, metadata: Optional[EventMetadata] = None
+    ) -> None:
         device = await self.get_by_id_or_fail(device_id)
         await self.repo.delete(device)
 
-        await self.publisher.publish(
-            stream_name="stream:system_events",
-            event_type="device.deleted",
-            payload={"device_id": str(device_id), "name": device.name},
-            metadata=metadata,
-        )
+        if self.publisher and metadata:
+            event = DomainEvent(
+                event_type="device.deleted",
+                metadata=metadata,
+                payload={"device_id": str(device_id), "name": device.name},
+            )
+            await self.publisher.publish(
+                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                event=event,
+            )

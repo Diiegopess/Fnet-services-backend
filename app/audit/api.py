@@ -4,7 +4,7 @@ API Pública del Módulo de Auditoría.
 Punto único de contacto interno para otros módulos del backend.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,11 +30,13 @@ class AuditAPI:
         requerir que otros módulos importen esquemas internos de audit.
         """
         log_in = AuditLogCreate(
+            event_id=str(uuid.uuid4()),
             event_type=event_type,
             user_id=user_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
+            ip_address=ip_address or "unknown",
+            user_agent=user_agent or "unknown",
             payload=payload or {},
+            occurred_at=datetime.now(timezone.utc),
         )
         log = await audit_service.record_audit_log(self.db, log_in)
         return AuditLogResponse.model_validate(log)

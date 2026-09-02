@@ -22,7 +22,11 @@ from app.auth.service import AuthService
 from app.core.events.base import EventMetadata
 from app.core.security import create_access_token
 from app.infrastructure.cache.redis import get_redis
-from app.users.dependencies import get_current_user_id
+from app.auth.dependencies import (
+    get_auth_service,
+    get_current_user_id,
+    get_event_metadata,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

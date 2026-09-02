@@ -29,7 +29,7 @@ class VDOMResponse(VDOMBase):
 
     id: uuid.UUID
     device_id: uuid.UUID
-    client_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
 

@@ -3,18 +3,18 @@ Módulo de Routers HTTP para el Dominio de Usuarios y RBAC.
 """
 
 import uuid
-from typing import Any, List
+from typing import Any
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.api import RequirePermissions
 from app.core.events.base import EventMetadata
 from app.core.events.interfaces import IEventPublisher
-from app.core.rbac.dependencies import RequirePermissions
 from app.core.rbac.permissions import PermissionEnum
 from app.infrastructure.brokers.factory import get_event_publisher
 from app.infrastructure.db.database import get_db
 from app.users import service as user_service
-from app.users.dependencies import get_current_user
+from app.users.dependencies import get_current_user_entity
 from app.users.models import User
 from app.users.schemas import (
     RoleAssignSchema,
@@ -39,7 +39,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 async def admin_create_user(
     request: Request,
     user_in: UserCreateAdmin,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_entity),
     publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -65,7 +65,7 @@ async def admin_create_user(
     summary="Obtener perfil actual",
 )
 async def read_current_user(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_entity),
 ) -> Any:
     return current_user
 
@@ -79,7 +79,7 @@ async def read_current_user(
 )
 async def update_current_user(
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_entity),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     return await user_service.update_user(
@@ -90,7 +90,7 @@ async def update_current_user(
 # --- 4. LISTAR USUARIOS ---
 @router.get(
     "/",
-    response_model=List[UserResponse],
+    response_model=list[UserResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar usuarios",
     dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_READ))],
@@ -140,7 +140,7 @@ async def assign_user_roles(
 # --- 7. LISTAR CATÁLOGO DE ROLES ---
 @router.get(
     "/roles/catalog",
-    response_model=List[RoleResponse],
+    response_model=list[RoleResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar catálogo de roles y permisos",
     dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_READ))],

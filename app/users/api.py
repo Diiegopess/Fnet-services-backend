@@ -8,6 +8,7 @@ import uuid
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rbac.context import AuthenticatedUser
 from app.users import service as user_service
 from app.users.repository import UserRepository
 from app.users.schemas import UserProfileCreate, UserResponse
@@ -17,6 +18,31 @@ class UsersAPI:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repo = UserRepository(db)
+
+    async def get_authenticated_user_context(
+        self, user_id: uuid.UUID
+    ) -> Optional[AuthenticatedUser]:
+        """
+        Fachada pública: entrega el contexto de identidad y permisos desacoplado del modelo ORM.
+        """
+        user = await self.repo.get_by_id(user_id)
+        if not user or not user.is_active:
+            return None
+
+        permissions = {
+            perm.code
+            for role in user.roles
+            for perm in role.permissions
+        }
+
+        return AuthenticatedUser(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            is_active=user.is_active,
+            is_superuser=user.is_superuser,
+            permissions=permissions,
+        )
 
     async def get_user_by_id(self, user_id: uuid.UUID) -> Optional[UserResponse]:
         """Obtiene el DTO del usuario por su UUID."""

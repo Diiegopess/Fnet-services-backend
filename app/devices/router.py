@@ -3,11 +3,11 @@ Controlador HTTP para Chasis Físicos FortiGate.
 """
 
 import uuid
-from typing import List
 from fastapi import APIRouter, Depends, Query, Request, status
 
+from app.auth.api import RequirePermissions
 from app.core.events.base import EventMetadata
-from app.core.rbac.dependencies import RequirePermissions
+from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
 from app.devices.dependencies import get_device_service
 from app.devices.schemas import (
@@ -18,12 +18,11 @@ from app.devices.schemas import (
     DeviceUpdate,
 )
 from app.devices.service import DeviceService
-from app.users.models import User
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 
 
-def _extract_metadata(request: Request, user: User) -> EventMetadata:
+def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadata:
     return EventMetadata(
         actor_id=str(user.id),
         actor_email=user.email,
@@ -39,7 +38,7 @@ def _extract_metadata(request: Request, user: User) -> EventMetadata:
 )
 async def test_device_connection(
     payload: DeviceTestConnectionRequest,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_TEST_CONNECTION)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_TEST_CONNECTION)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.test_connectivity(
@@ -58,7 +57,7 @@ async def test_device_connection(
 async def create_device(
     payload: DeviceCreate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_CREATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_CREATE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -67,13 +66,13 @@ async def create_device(
 
 @router.get(
     "",
-    response_model=List[DeviceResponse],
+    response_model=list[DeviceResponse],
     summary="Listar dispositivos físicos registrados",
 )
 async def list_devices(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.get_multi(skip=skip, limit=limit)
@@ -86,7 +85,7 @@ async def list_devices(
 )
 async def get_device(
     device_id: uuid.UUID,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.get_by_id_or_fail(device_id)
@@ -101,7 +100,7 @@ async def update_device(
     device_id: uuid.UUID,
     payload: DeviceUpdate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_UPDATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_UPDATE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -116,7 +115,7 @@ async def update_device(
 async def delete_device(
     device_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.DEVICES_DELETE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_DELETE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)

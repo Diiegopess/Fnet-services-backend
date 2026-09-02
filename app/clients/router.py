@@ -3,9 +3,10 @@ Controlador HTTP para el Dominio de Clientes.
 """
 
 import uuid
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 
+from app.auth.api import RequirePermissions
 from app.clients.dependencies import get_client_service
 from app.clients.schemas import (
     ClientCreate,
@@ -15,14 +16,13 @@ from app.clients.schemas import (
 )
 from app.clients.service import ClientService
 from app.core.events.base import EventMetadata
-from app.core.rbac.dependencies import RequirePermissions
+from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
-from app.users.models import User
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
 
-def _extract_metadata(request: Request, user: User) -> EventMetadata:
+def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadata:
     return EventMetadata(
         actor_id=str(user.id),
         actor_email=user.email,
@@ -40,7 +40,7 @@ def _extract_metadata(request: Request, user: User) -> EventMetadata:
 async def create_client(
     payload: ClientCreate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_CREATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_CREATE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -49,14 +49,14 @@ async def create_client(
 
 @router.get(
     "",
-    response_model=List[ClientResponse],
+    response_model=list[ClientResponse],
     summary="Listar clientes con paginación",
 )
 async def list_clients(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     is_active: Optional[bool] = Query(None),
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_READ)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_READ)),
     service: ClientService = Depends(get_client_service),
 ):
     return await service.get_multi(skip=skip, limit=limit, is_active=is_active)
@@ -69,7 +69,7 @@ async def list_clients(
 )
 async def get_client(
     client_id: uuid.UUID,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_READ)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_READ)),
     service: ClientService = Depends(get_client_service),
 ):
     return await service.get_by_id_or_fail(client_id)
@@ -84,7 +84,7 @@ async def update_client(
     client_id: uuid.UUID,
     payload: ClientUpdate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_UPDATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_UPDATE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -100,7 +100,7 @@ async def assign_technicians(
     client_id: uuid.UUID,
     payload: TechnicianAssignmentSchema,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_ASSIGN_TECHNICIAN)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_ASSIGN_TECHNICIAN)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -119,7 +119,7 @@ async def assign_technicians(
 async def delete_client(
     client_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.CLIENTS_DELETE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.CLIENTS_DELETE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)

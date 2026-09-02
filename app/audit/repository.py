@@ -17,6 +17,7 @@ from app.infrastructure.repositories.base import BaseRepository
 
 
 class AuditLogUpdateDummy(BaseModel):
+    """Schema dummy necesario para cumplir con el contrato genérico de BaseRepository."""
     pass
 
 
@@ -45,10 +46,10 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogUpdateDum
         if user_id:
             stmt = stmt.where(AuditLog.user_id == user_id)
         if from_date:
-            stmt = stmt.where(AuditLog.occurred_at >= from_date)
+            stmt = stmt.where(AuditLog.created_at >= from_date)
         if to_date:
-            stmt = stmt.where(AuditLog.occurred_at <= to_date)
+            stmt = stmt.where(AuditLog.created_at <= to_date)
 
-        stmt = stmt.order_by(desc(AuditLog.occurred_at)).offset(skip).limit(limit)
+        stmt = stmt.order_by(desc(AuditLog.created_at)).offset(skip).limit(limit)
         result = await self.db.execute(stmt)
         return result.scalars().all()

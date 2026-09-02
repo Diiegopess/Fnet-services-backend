@@ -28,7 +28,7 @@ class DeviceVDOM(Base):
     client_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("clients.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)

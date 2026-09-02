@@ -74,7 +74,8 @@ class ClientService:
                 },
             )
             await self.publisher.publish(
-                stream_or_topic=settings.AUTH_STREAM_NAME, event=event
+                stream_or_topic=getattr(settings, "AUDIT_STREAM_NAME", settings.AUTH_STREAM_NAME),
+                event=event,
             )
 
         return created_client
@@ -113,7 +114,8 @@ class ClientService:
                 },
             )
             await self.publisher.publish(
-                stream_or_topic=settings.AUTH_STREAM_NAME, event=event
+                stream_or_topic=getattr(settings, "AUDIT_STREAM_NAME", settings.AUTH_STREAM_NAME),
+                event=event,
             )
 
         return updated_client
@@ -148,7 +150,8 @@ class ClientService:
                 },
             )
             await self.publisher.publish(
-                stream_or_topic=settings.AUTH_STREAM_NAME, event=event
+                stream_or_topic=getattr(settings, "AUDIT_STREAM_NAME", settings.AUTH_STREAM_NAME),
+                event=event,
             )
 
         return updated_client
@@ -169,5 +172,6 @@ class ClientService:
                 payload={"client_id": str(client_id), "name": client.name},
             )
             await self.publisher.publish(
-                stream_or_topic=settings.AUTH_STREAM_NAME, event=event
+                stream_or_topic=getattr(settings, "AUDIT_STREAM_NAME", settings.AUTH_STREAM_NAME),
+                event=event,
             )

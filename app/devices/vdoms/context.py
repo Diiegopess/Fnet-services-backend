@@ -4,6 +4,7 @@ Módulo de Contexto de Ejecución para VDOMs.
 
 import uuid
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -16,4 +17,4 @@ class VDOMContext:
     device_name: str
     device_host: str
     device_port: int
-    client_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None

@@ -3,22 +3,21 @@ Controlador HTTP para VDOMs (Particiones Lógicas).
 """
 
 import uuid
-from typing import List
 from fastapi import APIRouter, Depends, Request, status
 
+from app.auth.api import RequirePermissions
 from app.core.events.base import EventMetadata
-from app.core.rbac.dependencies import RequirePermissions
+from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
-from app.devices.vdoms.dependencies import get_authorized_vdom_context, get_vdom_service
 from app.devices.vdoms.context import VDOMContext
-from app.devices.vdoms.schemas import VDOMCreate, VDOMResponse, VDOMUpdate
+from app.devices.vdoms.dependencies import get_authorized_vdom_context, get_vdom_service
+from app.devices.vdoms.schemas import VDOMCreate, VDOMResponse, VDOMSyncResult, VDOMUpdate
 from app.devices.vdoms.service import VDOMService
-from app.users.models import User
 
 router = APIRouter(prefix="/vdoms", tags=["Device VDOMs"])
 
 
-def _extract_metadata(request: Request, user: User) -> EventMetadata:
+def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadata:
     return EventMetadata(
         actor_id=str(user.id),
         actor_email=user.email,
@@ -36,21 +35,36 @@ def _extract_metadata(request: Request, user: User) -> EventMetadata:
 async def create_vdom(
     payload: VDOMCreate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.VDOMS_CREATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_CREATE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
     return await service.create_vdom(data=payload, metadata=metadata)
 
 
+@router.post(
+    "/device/{device_id}/sync",
+    response_model=VDOMSyncResult,
+    summary="Sincronizar VDOMs detectados en el chasis físico FortiGate",
+)
+async def sync_vdoms(
+    device_id: uuid.UUID,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_CREATE)),
+    service: VDOMService = Depends(get_vdom_service),
+):
+    metadata = _extract_metadata(request, current_user)
+    return await service.sync_device_vdoms(device_id=device_id, metadata=metadata)
+
+
 @router.get(
     "/device/{device_id}",
-    response_model=List[VDOMResponse],
+    response_model=list[VDOMResponse],
     summary="Listar todos los VDOMs de un dispositivo específico",
 )
 async def list_vdoms_by_device(
     device_id: uuid.UUID,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.VDOMS_READ)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_READ)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     return await service.list_by_device(device_id)
@@ -78,7 +92,7 @@ async def update_vdom(
     vdom_id: uuid.UUID,
     payload: VDOMUpdate,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.VDOMS_UPDATE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_UPDATE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -93,7 +107,7 @@ async def update_vdom(
 async def delete_vdom(
     vdom_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(RequirePermissions(PermissionEnum.VDOMS_DELETE)),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_DELETE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
