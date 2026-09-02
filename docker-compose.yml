@@ -61,12 +61,14 @@ services:
   # --- SERVICIO 4: FortiGate Mock (Simulador de Hardware para Tests) ---
   fortigate-mock:
     build:
-      context: ./tests/mocks/fortigate
+      context: ./tests/mock/fortigate
       dockerfile: Dockerfile
-    container_name: fnet_fortigate_mock
-    restart: always
+    container_name: fortigate_mock_api
     ports:
       - "8443:8443"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
 
 volumes:
   fnet_postgres_data:

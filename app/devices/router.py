@@ -31,6 +31,26 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
     )
 
 
+# ----------------------------------------------------------------------
+# 1. RUTAS ESTÁTICAS / ESPECÍFICAS (Deben ir ANTES de /{device_id})
+# ----------------------------------------------------------------------
+
+@router.get(
+    "/supported-versions",
+    response_model=list[dict[str, str]],
+    summary="Obtener versiones de FortiOS soportadas",
+)
+async def get_supported_fortios_versions():
+    """Devuelve el catálogo de versiones de FortiOS con conectores aprobados."""
+    return [
+        {"label": "FortiOS v7.4.x", "value": "7.4"},
+        {"label": "FortiOS v7.2.x (Recomendado)", "value": "7.2"},
+        {"label": "FortiOS v7.0.x", "value": "7.0"},
+        {"label": "FortiOS v6.4.x", "value": "6.4"},
+        {"label": "Entorno Mock / Pruebas", "value": "mock"},
+    ]
+
+
 @router.post(
     "/test-connection",
     response_model=ConnectivityCheckResult,
@@ -46,6 +66,20 @@ async def test_device_connection(
         port=payload.port,
         api_token=payload.api_token,
     )
+
+
+@router.get(
+    "",
+    response_model=list[DeviceResponse],
+    summary="Listar dispositivos físicos registrados",
+)
+async def list_devices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
+    service: DeviceService = Depends(get_device_service),
+):
+    return await service.get_multi(skip=skip, limit=limit)
 
 
 @router.post(
@@ -64,19 +98,9 @@ async def create_device(
     return await service.create_device(data=payload, metadata=metadata)
 
 
-@router.get(
-    "",
-    response_model=list[DeviceResponse],
-    summary="Listar dispositivos físicos registrados",
-)
-async def list_devices(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
-    service: DeviceService = Depends(get_device_service),
-):
-    return await service.get_multi(skip=skip, limit=limit)
-
+# ----------------------------------------------------------------------
+# 2. RUTAS DINÁMICAS (Con parámetros path como UUID)
+# ----------------------------------------------------------------------
 
 @router.get(
     "/{device_id}",

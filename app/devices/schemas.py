@@ -9,6 +9,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.devices.vdoms.schemas import VDOMResponse
 
+from enum import Enum
+
+class FortiOSVersion(str, Enum):
+    V6_4 = "6.4"
+    V7_0 = "7.0"
+    V7_2 = "7.2"
+    V7_4 = "7.4"
+    MOCK = "mock"  # <-- Para pruebas locales / desarrollo
 
 class DeviceBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=150, description="Identificador amigable del equipo")
