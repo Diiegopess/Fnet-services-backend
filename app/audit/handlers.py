@@ -29,20 +29,25 @@ async def handle_audit_event(event: DomainEvent, db: AsyncSession) -> None:
             user_uuid = None
 
     try:
-        occurred_at_dt = datetime.fromisoformat(event.occurred_at)
+        created_at_dt = datetime.fromisoformat(event.occurred_at)
     except Exception:
-        occurred_at_dt = datetime.now(timezone.utc)
+        created_at_dt = datetime.now(timezone.utc)
 
-    log_in = AuditLogCreate(
-        event_id=event.event_id,
-        event_type=event.event_type,
-        user_id=user_uuid,
-        ip_address=event.metadata.ip_address,
-        user_agent=event.metadata.user_agent,
-        correlation_id=event.metadata.correlation_id,
-        payload=event.payload,
-        occurred_at=occurred_at_dt,
-    )
+    # Construir kwargs filtrando nulos para que apliquen los valores por defecto
+    log_kwargs = {
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "user_id": user_uuid,
+        "payload": event.payload,
+        "created_at": created_at_dt,  # <-- Sincronizado con Pydantic / DB
+    }
+
+    if event.metadata.ip_address:
+        log_kwargs["ip_address"] = event.metadata.ip_address
+    if event.metadata.user_agent:
+        log_kwargs["user_agent"] = event.metadata.user_agent
+
+    log_in = AuditLogCreate(**log_kwargs)
 
     try:
         await audit_service.record_audit_log(db=db, log_in=log_in)

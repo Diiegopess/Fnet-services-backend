@@ -5,6 +5,7 @@ Gestiona la verificación de credenciales locales, validación de tokens
 de Google OAuth 2.0 y el aprovisionamiento de perfiles vía UsersFacade.
 """
 
+import uuid
 from google.auth.transport import requests
 from google.oauth2 import id_token
 from sqlalchemy import select
@@ -25,9 +26,6 @@ from app.core.security import hash_password, verify_password
 from app.users.api import UsersAPI
 
 
-# ==============================================================================
-# 1. UTILIDAD DE GOOGLE OAUTH
-# ==============================================================================
 def verify_google_token(token: str) -> dict | None:
     """Verifica la firma y validez de un ID Token emitido por Google."""
     try:
@@ -41,9 +39,6 @@ def verify_google_token(token: str) -> dict | None:
         return None
 
 
-# ==============================================================================
-# 2. SERVICIO DE AUTENTICACIÓN
-# ==============================================================================
 class AuthService:
     """Servicio que encapsula las operaciones de autenticación y emisión de eventos."""
 
@@ -60,7 +55,6 @@ class AuthService:
         """
         Registra una nueva credencial y emite el evento 'auth.user_registered'.
         """
-        # 1. Verificar si el correo ya existe
         stmt = select(AuthCredential).where(AuthCredential.email == data.email)
         result = await self.db.execute(stmt)
         if result.scalar_one_or_none():
@@ -70,7 +64,6 @@ class AuthService:
                 error_code="EMAIL_ALREADY_EXISTS",
             )
 
-        # 2. Crear y persistir la credencial en la base de datos
         hashed_pwd = hash_password(data.password)
         credential = AuthCredential(
             email=data.email,
@@ -82,7 +75,6 @@ class AuthService:
         await self.db.commit()
         await self.db.refresh(credential)
 
-        # 3. Publicar evento en Redis Streams (Desacoplado hacia Users y Audit)
         event = DomainEvent(
             event_type="auth.user_registered",
             metadata=metadata,
@@ -105,19 +97,24 @@ class AuthService:
         metadata: EventMetadata,
     ) -> AuthCredential:
         """
-        Autentica credenciales locales y publica el evento 'auth.login_success'.
+        Autentica credenciales locales y publica el evento 'auth.login_success' o 'auth.login_failed'.
         """
         stmt = select(AuthCredential).where(AuthCredential.email == email)
         result = await self.db.execute(stmt)
         account = result.scalar_one_or_none()
 
         if not account or not account.password_hash or not verify_password(password, account.password_hash):
+            failed_event = DomainEvent(
+                event_type="auth.login_failed",
+                metadata=metadata,
+                payload={"attempted_email": email, "reason": "invalid_credentials"},
+            )
+            await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=failed_event)
             raise InvalidCredentialsError()
 
         if not account.is_active:
             raise InactiveUserError()
 
-        # Emitir evento de auditoría de inicio de sesión exitoso
         event = DomainEvent(
             event_type="auth.login_success",
             metadata=metadata,
@@ -152,12 +149,10 @@ class AuthService:
                 message="El token de Google no contiene la información requerida (email o sub)."
             )
 
-        # 1. Buscar por google_id
         stmt_google = select(AuthCredential).where(AuthCredential.google_id == google_id)
         result_google = await self.db.execute(stmt_google)
         account = result_google.scalar_one_or_none()
 
-        # 2. Si no existe por google_id, buscar por email para vincular
         is_new_user = False
         if not account:
             stmt_email = select(AuthCredential).where(AuthCredential.email == email)
@@ -171,7 +166,6 @@ class AuthService:
                 await self.db.commit()
                 await self.db.refresh(account)
             else:
-                # 3. Crear nueva cuenta
                 is_new_user = True
                 account = AuthCredential(
                     email=email,
@@ -187,7 +181,6 @@ class AuthService:
         if not account.is_active:
             raise InactiveUserError()
 
-        # 4. Asegurar perfil síncrono en Users mediante la Fachada
         existing_profile = await self.users_api.get_user_by_id(account.id)
         if not existing_profile:
             given_name = id_info.get("given_name") or ""
@@ -203,7 +196,6 @@ class AuthService:
                 role_names=["USER"],
             )
 
-        # 5. Publicar evento si es nuevo usuario registrado con Google
         if is_new_user:
             register_event = DomainEvent(
                 event_type="auth.user_registered",
@@ -218,7 +210,6 @@ class AuthService:
             )
             await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=register_event)
 
-        # 6. Publicar evento de login exitoso
         login_event = DomainEvent(
             event_type="auth.login_success",
             metadata=metadata,
@@ -231,3 +222,14 @@ class AuthService:
         await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=login_event)
 
         return account
+
+    async def logout_user(self, user_id: uuid.UUID | str, metadata: EventMetadata) -> None:
+        """
+        Emite el evento de auditoría de cierre de sesión.
+        """
+        event = DomainEvent(
+            event_type="auth.logout",
+            metadata=metadata,
+            payload={"user_id": str(user_id)},
+        )
+        await self.publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)

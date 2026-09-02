@@ -31,12 +31,12 @@ class RedisStreamConsumer:
         """Asegura que el grupo de consumidores existe en todos los streams configurados."""
         streams = [
             getattr(settings, "AUTH_STREAM_NAME", "stream:auth"),
+            getattr(settings, "AUDIT_STREAM_NAME", "stream:audit"), # <-- AGREGADO
             getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
         ]
 
         for stream in streams:
             try:
-                # Se utiliza el id="0" para procesar eventos históricos o "$" para eventos nuevos desde el inicio
                 await self.redis.xgroup_create(
                     name=stream, groupname=self.group_name, id="0", mkstream=True
                 )
@@ -55,6 +55,7 @@ class RedisStreamConsumer:
 
         streams_to_read = {
             getattr(settings, "AUTH_STREAM_NAME", "stream:auth"): ">",
+            getattr(settings, "AUDIT_STREAM_NAME", "stream:audit"): ">", # <-- AGREGADO
             getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"): ">",
         }
 
@@ -116,16 +117,18 @@ class RedisStreamConsumer:
             # Instanciación limpia de DB AsyncSession por lote/evento
             async with AsyncSessionLocal() as db:
                 await event_router.dispatch(event=event, db=db)
+                await db.commit()  # <-- GESTIÓN DE TRANSACCIÓN: Confirma los cambios de todos los handlers
 
-            # Confirmar mensaje procesado exitosamente
+            # Confirmar mensaje procesado exitosamente en Redis
             await self.redis.xack(stream_name, self.group_name, message_id)
 
         except Exception as e:
+            # En caso de error, el 'async with' cierra la sesión y se previene cualquier corrupción de datos
             logger.error(
                 f"[CONSUMER_PROCESS_ERROR] Fallo al procesar mensaje {message_id} en {stream_name}: {str(e)}",
                 exc_info=True,
             )
-
+            
     async def stop(self) -> None:
         """Detiene la bandera del ciclo del consumidor."""
         self.is_running = False

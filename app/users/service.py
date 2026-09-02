@@ -154,12 +154,14 @@ async def admin_create_user(
 # 3. ACTUALIZACIÓN DE PERFILES Y GESTIÓN DE ROLES
 # ==============================================================================
 
+# Modificación en update_user
 async def update_user(
     db: AsyncSession,
     user_id: uuid.UUID,
     user_in: UserUpdate | UserUpdateAdmin,
+    metadata: EventMetadata | None = None,
+    publisher: IEventPublisher | None = None,
 ) -> User:
-    """Actualiza los datos del perfil de un usuario validando unicidad de email."""
     repo = UserRepository(db)
     db_user = await get_by_id_or_fail(db, user_id)
 
@@ -169,26 +171,53 @@ async def update_user(
             raise UserAlreadyExistsError()
 
     update_data = user_in.model_dump(exclude_unset=True)
-
     for field, value in update_data.items():
         setattr(db_user, field, value)
 
     updated_user = await repo.update(db_user)
+
+    # Publicar evento para auditoría si se proveyó el publisher
+    if publisher and metadata:
+        event = DomainEvent(
+            event_type="user.updated",
+            metadata=metadata,
+            payload={
+                "user_id": str(updated_user.id),
+                "updated_fields": list(update_data.keys()),
+            },
+        )
+        await publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)
+
     return await get_by_id_or_fail(db, updated_user.id)
 
 
+# Modificación en assign_roles_to_user
 async def assign_roles_to_user(
     db: AsyncSession,
     user_id: uuid.UUID,
     role_names: list[str],
+    metadata: EventMetadata | None = None,
+    publisher: IEventPublisher | None = None,
 ) -> User:
-    """Asigna una lista de roles a un usuario reemplazando los anteriores."""
     repo = UserRepository(db)
     db_user = await get_by_id_or_fail(db, user_id)
     roles = await repo.get_roles_by_names(role_names)
 
     await repo.assign_roles_to_user(user=db_user, roles=list(roles))
-    return await get_by_id_or_fail(db, user_id)
+
+    # Publicar evento para auditoría si se proveyó el publisher
+    if publisher and metadata:
+        event = DomainEvent(
+            event_type="user.roles_assigned",
+            metadata=metadata,
+            payload={
+                "user_id": str(user_id),
+                "assigned_roles": role_names,
+            },
+        )
+        await publisher.publish(stream_or_topic=settings.AUTH_STREAM_NAME, event=event)
+
+    return await get_by_id_or_fail(db, user_id) 
 
 
 async def list_roles(db: AsyncSession) -> Sequence[Role]:

@@ -28,6 +28,16 @@ from app.users.schemas import (
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+# --- Helper para extraer metadatos de auditoría ---
+def _build_metadata(request: Request, current_user: User) -> EventMetadata:
+    return EventMetadata(
+        actor_id=str(current_user.id),
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
 # --- 1. REGISTRAR USUARIO CON PERMISOS ---
 @router.post(
     "/",
@@ -43,12 +53,7 @@ async def admin_create_user(
     publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    metadata = EventMetadata(
-        actor_id=str(current_user.id),
-        actor_email=current_user.email,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
+    metadata = _build_metadata(request, current_user)
     return await user_service.admin_create_user(
         db=db,
         user_in=user_in,
@@ -71,19 +76,22 @@ async def read_current_user(
 
 
 # --- 3. ACTUALIZAR MI PROPIO PERFIL ---
-@router.patch(
-    "/me",
-    response_model=UserResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Actualizar perfil propio",
-)
+@router.patch("/me", response_model=UserResponse)
 async def update_current_user(
+    request: Request,
     user_in: UserUpdate,
     current_user: User = Depends(get_current_user_entity),
+    publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
+    metadata = EventMetadata(
+        actor_id=str(current_user.id),
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return await user_service.update_user(
-        db=db, user_id=current_user.id, user_in=user_in
+        db=db, user_id=current_user.id, user_in=user_in, metadata=metadata, publisher=publisher
     )
 
 
@@ -104,36 +112,44 @@ async def list_users(
 
 
 # --- 5. ACTUALIZAR USUARIO ---
-@router.patch(
-    "/{user_id}",
-    response_model=UserResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Modificar usuario por ID",
-    dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_UPDATE))],
-)
+@router.patch("/{user_id}", response_model=UserResponse)
 async def admin_update_user(
+    request: Request,
     user_id: uuid.UUID,
     user_in: UserUpdateAdmin,
+    current_user: User = Depends(get_current_user_entity),
+    publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    return await user_service.update_user(db=db, user_id=user_id, user_in=user_in)
+    metadata = EventMetadata(
+        actor_id=str(current_user.id),
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return await user_service.update_user(
+        db=db, user_id=user_id, user_in=user_in, metadata=metadata, publisher=publisher
+    )
 
 
 # --- 6. ASIGNAR ROLES A USUARIO ---
-@router.post(
-    "/{user_id}/roles",
-    response_model=UserResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Asignar roles a un usuario",
-    dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_ASSIGN_ROLE))],
-)
+@router.post("/{user_id}/roles", response_model=UserResponse)
 async def assign_user_roles(
+    request: Request,
     user_id: uuid.UUID,
     payload: RoleAssignSchema,
+    current_user: User = Depends(get_current_user_entity),
+    publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
+    metadata = EventMetadata(
+        actor_id=str(current_user.id),
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return await user_service.assign_roles_to_user(
-        db=db, user_id=user_id, role_names=payload.role_names
+        db=db, user_id=user_id, role_names=payload.role_names, metadata=metadata, publisher=publisher
     )
 
 
