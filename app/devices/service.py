@@ -1,6 +1,4 @@
-"""
-Servicio de Negocio para el Dominio de Dispositivos (Chasis Fortinet).
-"""
+"""Servicio de Negocio para el Dominio de Dispositivos (Chasis Fortinet)."""
 
 import uuid
 from typing import Optional, Sequence
@@ -34,9 +32,26 @@ class DeviceService:
         self.vdom_repo = VDOMRepository(db)
         self.clients_api = ClientsAPI(db)
 
-    async def test_connectivity(self, host: str, port: int, api_token: str) -> ConnectivityCheckResult:
+    def _sanitize_error_msg(self, msg: Optional[str]) -> Optional[str]:
+        """Garantiza la decodificación segura en UTF-8 para prevenir errores 'ascii codec'."""
+        if not msg:
+            return None
+        return msg.encode("utf-8", errors="replace").decode("utf-8")
+
+    async def test_connectivity(
+        self, host: str, port: int, api_token: str
+    ) -> ConnectivityCheckResult:
         """Prueba de diagnóstico desacoplada invocada a través del puerto IDeviceProber."""
-        return await self.prober.probe(host=host, port=port, api_token=api_token)
+        result = await self.prober.probe(
+            host=host, port=port, api_token=api_token
+        )
+
+        if not result.is_reachable and result.error_message:
+            result.error_message = self._sanitize_error_msg(
+                result.error_message
+            )
+
+        return result
 
     async def get_by_id_or_fail(self, device_id: uuid.UUID) -> FortigateDevice:
         device = await self.repo.get_by_id(device_id)
@@ -44,8 +59,13 @@ class DeviceService:
             raise DeviceNotFoundError()
         return device
 
-    async def get_multi(self, skip: int = 0, limit: int = 50) -> Sequence[FortigateDevice]:
-        return await self.repo.get_multi(skip=skip, limit=limit)
+    async def get_multi(
+        self, 
+        skip: int = 0, 
+        limit: int = 50,
+        client_id: Optional[uuid.UUID] = None, 
+    ) -> Sequence[FortigateDevice]:
+        return await self.repo.get_multi(skip=skip, limit=limit, client_id=client_id)
 
     async def create_device(
         self, data: DeviceCreate, metadata: Optional[EventMetadata] = None
@@ -54,18 +74,30 @@ class DeviceService:
         if existing:
             raise DeviceAlreadyExistsError()
 
-        # Validación del cliente por defecto si opera en modo standalone
+        # 1. Validación del cliente en modo standalone/root
         if not data.has_vdom_enabled:
-            if not data.default_client_id:
-                raise ClientNotFoundError("Se requiere 'default_client_id' para dispositivos en modo standalone/root.")
-            await self.clients_api.validate_client_is_active(data.default_client_id)
+            if not data.client_id:
+                raise ClientNotFoundError(
+                    "Se requiere 'client_id' para dispositivos en modo standalone/root."
+                )
+            await self.clients_api.validate_client_is_active(data.client_id)
 
-        # Intento de sonda no bloqueante para auto-descubrir serial real
-        probe_result = await self.prober.probe(host=data.host, port=data.port, api_token=data.api_token)
-        discovered_serial = probe_result.serial_number if probe_result.is_reachable else None
+        # 2. Intento de sonda no bloqueante para descubrir serial real
+        try:
+            probe_result = await self.prober.probe(
+                host=data.host, port=data.port, api_token=data.api_token
+            )
+            discovered_serial = (
+                probe_result.serial_number
+                if probe_result.is_reachable
+                else None
+            )
+        except Exception:
+            discovered_serial = None
 
         encrypted_token = encrypt_secret(data.api_token)
 
+        # 3. Creación del dispositivo (se mapea client_id explícitamente)
         device = FortigateDevice(
             name=data.name,
             host=data.host,
@@ -75,14 +107,15 @@ class DeviceService:
             serial_number=discovered_serial,
             has_vdom_enabled=data.has_vdom_enabled,
             is_active=data.is_active,
+            client_id=data.client_id,  # <-- Se asigna la relación con el cliente
         )
         created_device = await self.repo.create(device)
 
-        # Creación automática del VDOM 'root' si el equipo opera en modo standalone
-        if not data.has_vdom_enabled and data.default_client_id:
+        # 4. Creación del VDOM 'root' desde el submódulo si opera en modo standalone
+        if not data.has_vdom_enabled and data.client_id:
             root_vdom = DeviceVDOM(
                 device_id=created_device.id,
-                client_id=data.default_client_id,
+                client_id=data.client_id,
                 name="root",
                 is_root=True,
                 is_active=True,
@@ -90,6 +123,7 @@ class DeviceService:
             await self.vdom_repo.create(root_vdom)
             created_device = await self.repo.get_by_id(created_device.id)
 
+        # 5. Publicación de eventos de dominio
         if self.publisher and metadata:
             event = DomainEvent(
                 event_type="device.created",
@@ -100,17 +134,25 @@ class DeviceService:
                     "host": created_device.host,
                     "serial_number": created_device.serial_number,
                     "has_vdom_enabled": created_device.has_vdom_enabled,
+                    "client_id": str(created_device.client_id) if created_device.client_id else None,
                 },
             )
             await self.publisher.publish(
-                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                stream_or_topic=getattr(
+                    settings,
+                    "SYSTEM_EVENTS_STREAM_NAME",
+                    "stream:system_events",
+                ),
                 event=event,
             )
 
         return created_device
 
     async def update_device(
-        self, device_id: uuid.UUID, data: DeviceUpdate, metadata: Optional[EventMetadata] = None
+        self,
+        device_id: uuid.UUID,
+        data: DeviceUpdate,
+        metadata: Optional[EventMetadata] = None,
     ) -> FortigateDevice:
         device = await self.get_by_id_or_fail(device_id)
 
@@ -139,10 +181,17 @@ class DeviceService:
             event = DomainEvent(
                 event_type="device.updated",
                 metadata=metadata,
-                payload={"device_id": str(device_id), "name": updated_device.name},
+                payload={
+                    "device_id": str(device_id),
+                    "name": updated_device.name,
+                },
             )
             await self.publisher.publish(
-                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                stream_or_topic=getattr(
+                    settings,
+                    "SYSTEM_EVENTS_STREAM_NAME",
+                    "stream:system_events",
+                ),
                 event=event,
             )
 
@@ -161,6 +210,10 @@ class DeviceService:
                 payload={"device_id": str(device_id), "name": device.name},
             )
             await self.publisher.publish(
-                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                stream_or_topic=getattr(
+                    settings,
+                    "SYSTEM_EVENTS_STREAM_NAME",
+                    "stream:system_events",
+                ),
                 event=event,
             )

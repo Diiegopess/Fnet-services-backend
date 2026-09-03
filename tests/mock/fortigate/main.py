@@ -31,8 +31,22 @@ def _validate_token(authorization: Optional[str], access_token: Optional[str]) -
 async def get_system_status(
     authorization: Optional[str] = Header(None),
     access_token: Optional[str] = Query(None),
+    mode: Optional[str] = Query(None),  # Permite pasar ?mode=vdom o ?mode=standalone
+    x_mock_mode: Optional[str] = Header(None, alias="X-Mock-Mode"),  # O por Header
 ):
     _validate_token(authorization, access_token)
+
+    # Evaluación si es VDOM o Standalone según query params o headers
+    is_vdom_mode = (mode == "vdom") or (x_mock_mode == "vdom")
+
+    if is_vdom_mode:
+        serial_number = "FG100E-MOCK-VDOM"
+        hostname = "FW-Mock-VDOM"
+        system_mode = "vdom"
+    else:
+        serial_number = "FG100E-MOCK-STANDALONE"
+        hostname = "FW-Mock-Standalone"
+        system_mode = "standalone"
 
     # Estructura JSON Oficial que espera el conector de FortiGate
     return {
@@ -41,11 +55,11 @@ async def get_system_status(
         "version": "v7.2.4",
         "build": 1396,
         "results": {
-            "hostname": "FW-Mock-001",
-            "serial": "FG100E-MOCK-TEST",
+            "hostname": hostname,
+            "serial": serial_number,
             "version": "v7.2.4",
             "build": 1396,
-            "mode": "standalone",
+            "mode": system_mode,
             "vdom": "root",
             "status": "ok",
         },

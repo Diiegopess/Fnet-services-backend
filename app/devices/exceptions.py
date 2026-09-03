@@ -16,11 +16,26 @@ class DeviceNotFoundError(AppException):
 
 
 class DeviceAlreadyExistsError(AppException):
-    def __init__(self, message: str = "Ya existe un dispositivo registrado con esa dirección host o IP."):
+    def __init__(
+        self,
+        message: str = "Ya existe un dispositivo registrado con esa dirección host o IP.",
+    ):
         super().__init__(
             status_code=status.HTTP_409_CONFLICT,
             message=message,
             error_code="DEVICE_ALREADY_EXISTS",
+        )
+
+
+class DeviceConnectionError(AppException):
+    def __init__(
+        self,
+        message: str = "Error de conexión o comunicación con el dispositivo FortiGate.",
+    ):
+        super().__init__(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            message=message,
+            error_code="DEVICE_CONNECTION_ERROR",
         )
 
 
@@ -34,7 +49,10 @@ class VDOMNotFoundError(AppException):
 
 
 class VDOMAlreadyExistsError(AppException):
-    def __init__(self, message: str = "Ya existe un VDOM con ese nombre en el dispositivo."):
+    def __init__(
+        self,
+        message: str = "Ya existe un VDOM con ese nombre en el dispositivo.",
+    ):
         super().__init__(
             status_code=status.HTTP_409_CONFLICT,
             message=message,
@@ -43,7 +61,10 @@ class VDOMAlreadyExistsError(AppException):
 
 
 class VDOMAccessDeniedError(AppException):
-    def __init__(self, message: str = "No tienes asignación ni permisos sobre el cliente propietario de este VDOM."):
+    def __init__(
+        self,
+        message: str = "No tienes asignación ni permisos sobre el cliente propietario de este VDOM.",
+    ):
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
             message=message,

@@ -29,10 +29,20 @@ class DeviceRepository:
         res = await self.db.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def get_multi(self, skip: int = 0, limit: int = 50) -> Sequence[FortigateDevice]:
+    async def get_multi(
+        self, 
+        skip: int = 0, 
+        limit: int = 50, 
+        client_id: Optional[uuid.UUID] = None
+    ) -> Sequence[FortigateDevice]:
+        stmt = select(FortigateDevice).options(selectinload(FortigateDevice.vdoms))
+
+        # Filtro condicional por cliente de manera totalmente modular
+        if client_id is not None:
+            stmt = stmt.where(FortigateDevice.client_id == client_id)
+
         stmt = (
-            select(FortigateDevice)
-            .options(selectinload(FortigateDevice.vdoms))
+            stmt
             .offset(skip)
             .limit(limit)
             .order_by(FortigateDevice.created_at.desc())

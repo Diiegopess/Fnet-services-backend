@@ -1,17 +1,27 @@
-"""
-Controlador HTTP para VDOMs (Particiones Lógicas).
-"""
+"""Controlador HTTP para VDOMs (Particiones Lógicas)."""
 
 import uuid
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.api import RequirePermissions
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
+from app.devices.exceptions import (
+    DeviceConnectionError,
+    DeviceNotFoundError,
+)
 from app.devices.vdoms.context import VDOMContext
-from app.devices.vdoms.dependencies import get_authorized_vdom_context, get_vdom_service
-from app.devices.vdoms.schemas import VDOMCreate, VDOMResponse, VDOMSyncResult, VDOMUpdate
+from app.devices.vdoms.dependencies import (
+    get_authorized_vdom_context,
+    get_vdom_service,
+)
+from app.devices.vdoms.schemas import (
+    VDOMCreate,
+    VDOMResponse,
+    VDOMSyncResult,
+    VDOMUpdate,
+)
 from app.devices.vdoms.service import VDOMService
 
 router = APIRouter(prefix="/vdoms", tags=["Device VDOMs"])
@@ -26,6 +36,12 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
     )
 
 
+def _clean_exception_msg(exc: Exception) -> str:
+    """Sanitiza mensajes de excepción para prevenir 'ascii codec' en FastAPI/Starlette."""
+    text = str(exc)
+    return text.encode("utf-8", errors="replace").decode("utf-8")
+
+
 @router.post(
     "",
     response_model=VDOMResponse,
@@ -35,7 +51,9 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
 async def create_vdom(
     payload: VDOMCreate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_CREATE)),
+    current_user: AuthenticatedUser = Depends(
+        RequirePermissions(PermissionEnum.VDOMS_CREATE)
+    ),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -50,11 +68,31 @@ async def create_vdom(
 async def sync_vdoms(
     device_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_CREATE)),
+    current_user: AuthenticatedUser = Depends(
+        RequirePermissions(PermissionEnum.VDOMS_CREATE)
+    ),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
-    return await service.sync_device_vdoms(device_id=device_id, metadata=metadata)
+    try:
+        return await service.sync_device_vdoms(
+            device_id=device_id, metadata=metadata
+        )
+    except DeviceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dispositivo {device_id} no encontrado.",
+        )
+    except DeviceConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_clean_exception_msg(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error inesperado al sincronizar VDOMs: {_clean_exception_msg(exc)}",
+        )
 
 
 @router.get(
@@ -64,7 +102,9 @@ async def sync_vdoms(
 )
 async def list_vdoms_by_device(
     device_id: uuid.UUID,
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_READ)),
+    current_user: AuthenticatedUser = Depends(
+        RequirePermissions(PermissionEnum.VDOMS_READ)
+    ),
     service: VDOMService = Depends(get_vdom_service),
 ):
     return await service.list_by_device(device_id)
@@ -92,11 +132,15 @@ async def update_vdom(
     vdom_id: uuid.UUID,
     payload: VDOMUpdate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_UPDATE)),
+    current_user: AuthenticatedUser = Depends(
+        RequirePermissions(PermissionEnum.VDOMS_UPDATE)
+    ),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
-    return await service.update_vdom(vdom_id=vdom_id, data=payload, metadata=metadata)
+    return await service.update_vdom(
+        vdom_id=vdom_id, data=payload, metadata=metadata
+    )
 
 
 @router.delete(
@@ -107,7 +151,9 @@ async def update_vdom(
 async def delete_vdom(
     vdom_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_DELETE)),
+    current_user: AuthenticatedUser = Depends(
+        RequirePermissions(PermissionEnum.VDOMS_DELETE)
+    ),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)

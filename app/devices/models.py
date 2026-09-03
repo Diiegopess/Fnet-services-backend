@@ -16,6 +16,17 @@ class FortigateDevice(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
+    
+    # ------------------------------------------------------------------
+    # Referencia al dominio de Clientes (Desacoplado)
+    # ------------------------------------------------------------------
+    client_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+        doc="ID del cliente al que pertenece el chasis (si no está segmentado por VDOMs)"
+    )
+
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     host: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     port: Mapped[int] = mapped_column(Integer, default=443, nullable=False)
@@ -29,7 +40,7 @@ class FortigateDevice(Base):
     has_vdom_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Relación 1:N con VDOMs
+    # Relación 1:N interna del mismo dominio (con VDOMs)
     vdoms: Mapped[List["DeviceVDOM"]] = relationship(
         "DeviceVDOM",
         back_populates="device",
