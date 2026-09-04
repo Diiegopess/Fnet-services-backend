@@ -8,7 +8,7 @@ from app.clients.api import ClientsAPI, ClientNotFoundError
 from app.core.config import settings
 from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
-from app.core.security import encrypt_secret
+from app.core.security import decrypt_secret, encrypt_secret 
 from app.devices.connectors.base import IDeviceProber
 from app.devices.exceptions import DeviceAlreadyExistsError, DeviceNotFoundError
 from app.devices.models import FortigateDevice
@@ -52,6 +52,21 @@ class DeviceService:
             )
 
         return result
+
+    async def test_existing_device_connectivity(
+        self, device_id: uuid.UUID
+    ) -> ConnectivityCheckResult:
+        """Prueba de conectividad contra un equipo registrado usando el token almacenado."""
+        device = await self.get_by_id_or_fail(device_id)
+        
+        # Descifrar el token persistido
+        decrypted_token = decrypt_secret(device.encrypted_api_token)
+        
+        return await self.test_connectivity(
+            host=device.host,
+            port=device.port,
+            api_token=decrypted_token,
+        )
 
     async def get_by_id_or_fail(self, device_id: uuid.UUID) -> FortigateDevice:
         device = await self.repo.get_by_id(device_id)
@@ -107,7 +122,7 @@ class DeviceService:
             serial_number=discovered_serial,
             has_vdom_enabled=data.has_vdom_enabled,
             is_active=data.is_active,
-            client_id=data.client_id,  # <-- Se asigna la relación con el cliente
+            client_id=data.client_id,
         )
         created_device = await self.repo.create(device)
 

@@ -67,6 +67,17 @@ async def test_device_connection(
         api_token=payload.api_token,
     )
 
+@router.post(
+    "/{device_id}/test-connection",
+    response_model=ConnectivityCheckResult,
+    summary="Probar conectividad de un dispositivo ya registrado",
+)
+async def test_existing_device_connection(
+    device_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_TEST_CONNECTION)),
+    service: DeviceService = Depends(get_device_service),
+):
+    return await service.test_existing_device_connectivity(device_id)
 
 @router.get(
     "",
