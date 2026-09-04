@@ -11,7 +11,7 @@ class IDeviceProber(ABC):
     """Puerto específico para sondas de diagnóstico de red."""
 
     @abstractmethod
-    async def probe(self, host: str, port: int, api_token: str) -> ConnectivityCheckResult:
+    async def   probe(self, host: str, port: int, api_token: str) -> ConnectivityCheckResult:
         """Ejecuta una sonda L7 contra el hardware FortiOS."""
         pass
 
