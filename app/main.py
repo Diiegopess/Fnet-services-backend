@@ -1,10 +1,15 @@
-"""
-Punto de Entrada Principal de la Aplicación (FastAPI).
+#app.main.py
+
+"""Punto de entrada principal de la aplicación FastAPI.
+
+Configura el ciclo de vida (startup/shutdown), middlewares, manejadores
+globales de excepciones y monta las rutas de la API.
 """
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,35 +26,34 @@ from app.users.subscribers import setup_users_subscribers
 
 
 def _register_event_subscribers() -> None:
-    """Registra los suscriptores de eventos de todos los subdominios en el EventRouter."""
+    """Registra los manejadores de eventos en memoria de los módulos del sistema."""
     setup_audit_subscribers()
     setup_auth_subscribers()
     setup_users_subscribers()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: Tablas, seeder RBAC y superusuario
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Gestiona el ciclo de vida de arranque y apagado del servicio."""
+    # --- Startup ---
     await init_db()
-
-    # Startup: Registro de Handlers de Eventos
     _register_event_subscribers()
 
-    # Startup: Consumidor en segundo plano
+    # Inicia el consumidor de colas en segundo plano sin bloquear el arranque HTTP
     consumer = RedisStreamConsumer()
     consumer_task = asyncio.create_task(consumer.start())
 
     yield
 
-    # Shutdown: Apagado coordinado del consumidor
+    # --- Shutdown ---
     await consumer.stop()
     consumer_task.cancel()
     try:
+        # Espera que la tarea reconozca la cancelación para no dejarla colgada
         await consumer_task
     except asyncio.CancelledError:
         pass
 
-    # Liberar pool de Redis
     await close_redis_pool()
 
 
@@ -59,6 +63,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configuración permisiva de CORS para clientes web/móviles
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,7 +74,6 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
-# Rutas versión 1
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
@@ -79,7 +83,8 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
     tags=["Health"],
     summary="Verificar salud de la API",
 )
-async def health_check():
+async def health_check() -> HealthCheckResponse:
+    """Comprueba la disponibilidad del servicio para balanceadores de carga o Kubernetes."""
     return HealthCheckResponse(
         status="ok",
         environment=settings.ENVIRONMENT,
