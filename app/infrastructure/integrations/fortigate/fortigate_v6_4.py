@@ -1,31 +1,38 @@
-# app/devices/connectors/fortios_v7_4.py
+# app/integrations/fortigate/fortios_v6_4.py
+
+"""Adaptadores concretos de comunicación para FortiOS v6.4.x."""
 
 from typing import Any, Dict, List
-from app.devices.connectors.base import DeviceConnector, VDOMConnector
-from app.devices.connectors.client import FortiOSHttpClient
-from app.devices.schemas import ConnectivityCheckResult
+
+from .base import DeviceConnector, VDOMConnector
+from .client import FortiOSHttpClient
+from .schemas import FortiGateConnectivityResult
 
 
-class FortiOSV74DeviceConnector(DeviceConnector):
-    """Conector optimizado para FortiOS v7.4.x."""
+class FortiOSV64DeviceConnector(DeviceConnector):
+    """Conector optimizado para FortiOS v6.4.x (System Scope)."""
 
     def __init__(self, host: str, port: int, token: str, verify_ssl: bool = False):
         self.http = FortiOSHttpClient(host=host, port=port, token=token, verify_ssl=verify_ssl)
 
-    async def test_connectivity(self) -> ConnectivityCheckResult:
+    async def test_connectivity(self) -> FortiGateConnectivityResult:
         try:
             status_data = await self.get_system_status()
             results = status_data.get("results", {})
-            return ConnectivityCheckResult(
+            return FortiGateConnectivityResult(
                 is_reachable=True,
                 status_code=200,
-                version=results.get("version", "v7.4.x"),
+                version=results.get("version", "v6.4.x"),
                 serial=results.get("serial", "Unknown"),
-                message="Conexión exitosa contra FortiOS 7.4",
+                message="Conexión exitosa contra FortiOS 6.4",
             )
         except Exception as e:
-            return ConnectivityCheckResult(
-                is_reachable=False, status_code=500, version=None, serial=None, message=str(e)
+            return FortiGateConnectivityResult(
+                is_reachable=False,
+                status_code=500,
+                version=None,
+                serial=None,
+                message=str(e),
             )
 
     async def get_system_status(self) -> Dict[str, Any]:
@@ -38,32 +45,38 @@ class FortiOSV74DeviceConnector(DeviceConnector):
 
     async def get_ha_status(self) -> Dict[str, Any]:
         try:
-            # En v7.4+ se consulta el endpoint de HA monitor actualizado
             return await self.http.get("/api/v2/monitor/system/ha-peer")
         except Exception:
-            # Fallback tolerante para v7.4 standalone
             return await self.http.get("/api/v2/monitor/system/status")
 
     async def close(self) -> None:
-        await self.http.close()
+        pass  # httpx maneja el ciclo de vida en los bloques async con del cliente
 
 
-class FortiOSV74VDOMConnector(VDOMConnector):
-    """Conector VDOM optimizado para FortiOS v7.4.x."""
+class FortiOSV64VDOMConnector(VDOMConnector):
+    """Conector VDOM optimizado para FortiOS v6.4.x (Tenant Scope)."""
 
     def __init__(self, host: str, port: int, token: str, vdom: str, verify_ssl: bool = False):
         super().__init__(vdom=vdom)
         self.http = FortiOSHttpClient(host=host, port=port, token=token, verify_ssl=verify_ssl)
 
-    async def test_connectivity(self) -> ConnectivityCheckResult:
+    async def test_connectivity(self) -> FortiGateConnectivityResult:
         try:
             await self.get_firewall_policies()
-            return ConnectivityCheckResult(
-                is_reachable=True, status_code=200, version=None, serial=None, message=f"VDOM {self.vdom} OK (v7.4)"
+            return FortiGateConnectivityResult(
+                is_reachable=True,
+                status_code=200,
+                version=None,
+                serial=None,
+                message=f"VDOM {self.vdom} OK (v6.4)",
             )
         except Exception as e:
-            return ConnectivityCheckResult(
-                is_reachable=False, status_code=500, version=None, serial=None, message=str(e)
+            return FortiGateConnectivityResult(
+                is_reachable=False,
+                status_code=500,
+                version=None,
+                serial=None,
+                message=str(e),
             )
 
     async def get_firewall_policies(self) -> List[Dict[str, Any]]:
@@ -82,4 +95,4 @@ class FortiOSV74VDOMConnector(VDOMConnector):
         return data.get("results", [])
 
     async def close(self) -> None:
-        await self.http.close()
+        pass

@@ -1,15 +1,15 @@
-"""Adaptador de Red: Sonda HTTP para FortiOS con soporte para entornos reales y mocks."""
+"""Sonda HTTP L7 para diagnosticar conectividad y extraer metadata básica de FortiOS."""
 
 import ssl
 import time
+from typing import Dict, Union
 import httpx
 
-from app.devices.connectors.base import IDeviceProber
-from app.devices.schemas import ConnectivityCheckResult
+from app.infrastructure.integrations.fortigate.schemas import FortiGateConnectivityResult
 
 
-class FortiOSHttpProber(IDeviceProber):
-    """Implementación concreta de la sonda utilizando HTTP REST contra FortiOS."""
+class FortiOSHttpProber:
+    """Sonda L7 agnóstica de versión para diagnóstico de red contra FortiOS."""
 
     def __init__(self, timeout_seconds: float = 15.0):
         self.timeout_seconds = timeout_seconds
@@ -21,11 +21,11 @@ class FortiOSHttpProber(IDeviceProber):
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
 
-    def _clean_error_message(self, text: str | bytes | Exception) -> str:
+    def _clean_error_message(self, text: Union[str, bytes, Exception]) -> str:
         """Sanitiza mensajes de error y respuestas para evitar UnicodeDecodeError/ASCII crashes."""
         if isinstance(text, bytes):
             return text.decode("utf-8", errors="replace")
-        
+
         if isinstance(text, Exception):
             try:
                 text_str = str(text)
@@ -40,7 +40,9 @@ class FortiOSHttpProber(IDeviceProber):
             else "Error desconocido"
         )
 
-    async def _execute_probe(self, url: str, headers: dict, params: dict) -> httpx.Response:
+    async def _execute_probe(
+        self, url: str, headers: Dict[str, str], params: Dict[str, int]
+    ) -> httpx.Response:
         ssl_ctx = self._get_ssl_context()
         # Forzamos http1=True para evitar cierres de socket por negociación HTTP/2 en FortiOS.
         async with httpx.AsyncClient(
@@ -52,7 +54,8 @@ class FortiOSHttpProber(IDeviceProber):
 
     async def probe(
         self, host: str, port: int, api_token: str
-    ) -> ConnectivityCheckResult:
+    ) -> FortiGateConnectivityResult:
+        """Sondea la API de FortiGate y retorna la metadatal extraída."""
         headers = {
             "Authorization": f"Bearer {api_token}",
             "Accept": "application/json",
@@ -80,11 +83,13 @@ class FortiOSHttpProber(IDeviceProber):
 
             if response.status_code == 200:
                 data = response.json()
-                
-                # Manejar respuestas con formato 'results' (estándar) o plana
-                results = data.get("results", data) if isinstance(data, dict) else {}
 
-                return ConnectivityCheckResult(
+                # Manejar respuestas con formato 'results' (estándar) o plana
+                results = (
+                    data.get("results", data) if isinstance(data, dict) else {}
+                )
+
+                return FortiGateConnectivityResult(
                     is_reachable=True,
                     status_code=response.status_code,
                     serial_number=results.get("serial"),
@@ -96,7 +101,7 @@ class FortiOSHttpProber(IDeviceProber):
 
             # Sanitización del cuerpo de la respuesta en caso de error HTTP
             body_preview = self._clean_error_message(response.content[:200])
-            return ConnectivityCheckResult(
+            return FortiGateConnectivityResult(
                 is_reachable=False,
                 status_code=response.status_code,
                 latency_ms=latency,
@@ -104,19 +109,19 @@ class FortiOSHttpProber(IDeviceProber):
             )
 
         except httpx.ConnectTimeout:
-            return ConnectivityCheckResult(
+            return FortiGateConnectivityResult(
                 is_reachable=False,
                 error_message=f"Timeout de conexión tras {self.timeout_seconds}s contra {host}:{port}",
             )
         except httpx.ConnectError as e:
             clean_err = self._clean_error_message(e)
-            return ConnectivityCheckResult(
+            return FortiGateConnectivityResult(
                 is_reachable=False,
                 error_message=f"Error de red inalcanzable ({host}:{port}): {clean_err}",
             )
         except Exception as e:
             clean_err = self._clean_error_message(e)
-            return ConnectivityCheckResult(
+            return FortiGateConnectivityResult(
                 is_reachable=False,
                 error_message=f"Fallo inesperado al sondear {host}:{port}: {clean_err}",
             )

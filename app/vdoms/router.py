@@ -1,28 +1,24 @@
-"""Controlador HTTP para VDOMs (Particiones Lógicas)."""
+"""
+Controlador HTTP REST para VDOMs (Particiones Lógicas).
+"""
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 
 from app.auth.api import RequirePermissions
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
-from app.devices.exceptions import (
-    DeviceConnectionError,
-    DeviceNotFoundError,
-)
-from app.devices.vdoms.context import VDOMContext
-from app.devices.vdoms.dependencies import (
-    get_authorized_vdom_context,
-    get_vdom_service,
-)
-from app.devices.vdoms.schemas import (
+
+from app.vdoms.dependencies import get_authorized_vdom_context, get_vdom_service
+from app.vdoms.schemas import (
+    VDOMContext,
     VDOMCreate,
     VDOMResponse,
     VDOMSyncResult,
     VDOMUpdate,
 )
-from app.devices.vdoms.service import VDOMService
+from app.vdoms.service import VDOMService
 
 router = APIRouter(prefix="/vdoms", tags=["Device VDOMs"])
 
@@ -34,12 +30,6 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
-
-
-def _clean_exception_msg(exc: Exception) -> str:
-    """Sanitiza mensajes de excepción para prevenir 'ascii codec' en FastAPI/Starlette."""
-    text = str(exc)
-    return text.encode("utf-8", errors="replace").decode("utf-8")
 
 
 @router.post(
@@ -74,25 +64,9 @@ async def sync_vdoms(
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
-    try:
-        return await service.sync_device_vdoms(
-            device_id=device_id, metadata=metadata
-        )
-    except DeviceNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Dispositivo {device_id} no encontrado.",
-        )
-    except DeviceConnectionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=_clean_exception_msg(exc),
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al sincronizar VDOMs: {_clean_exception_msg(exc)}",
-        )
+    return await service.sync_device_vdoms(
+        device_id=device_id, metadata=metadata
+    )
 
 
 @router.get(

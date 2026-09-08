@@ -21,9 +21,9 @@ from app.auth.schemas import RegisterRequest
 from app.core.config import settings
 from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
-from app.core.exceptions import AppException
 from app.core.security import hash_password, verify_password
 from app.users.api import UsersAPI
+from app.users.exceptions import UserAlreadyExistsError
 
 
 def verify_google_token(token: str) -> dict | None:
@@ -58,10 +58,8 @@ class AuthService:
         stmt = select(AuthCredential).where(AuthCredential.email == data.email)
         result = await self.db.execute(stmt)
         if result.scalar_one_or_none():
-            raise AppException(
-                message="El correo electrónico ya se encuentra registrado.",
-                status_code=409,
-                error_code="EMAIL_ALREADY_EXISTS",
+            raise UserAlreadyExistsError(
+                message="El correo electrónico ya se encuentra registrado."
             )
 
         hashed_pwd = hash_password(data.password)

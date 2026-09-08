@@ -5,9 +5,30 @@ class Settings(BaseSettings):
     """Configuración global de la aplicación cargada desde variables de entorno."""
 
     # --- Proyecto ---
-    PROJECT_NAME: str = "App_Log API"
+    PROJECT_NAME: str = "Fnet_Services API"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
+
+    # Orígenes CORS permitidos (Formato de lista JSON)
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+
+    # Métodos HTTP permitidos para las rutas CRUD y Auth
+    CORS_ALLOWED_METHODS: list[str] = [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",  # Requerido por el navegador para el preflight de CORS
+    ]
+
+    # Cabeceras confirmadas por apiClient.ts
+    CORS_ALLOWED_HEADERS: list[str] = [
+        "Content-Type",     # Confirmado en la definición de axios.create()
+        "Authorization",    # Confirmado en el interceptor con getAuthToken()
+        "Accept",
+        "X-Requested-With",
+    ]
 
     # --- Seguridad y JWT ---
     SECRET_KEY: str

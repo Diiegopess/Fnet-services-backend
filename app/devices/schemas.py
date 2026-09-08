@@ -5,10 +5,8 @@ Esquemas Pydantic para el Dominio de Dispositivos (Hardware / Chasis Fortinet).
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
-
-from app.devices.vdoms.schemas import VDOMResponse
 
 
 class FortiOSVersion(str, Enum):
@@ -50,9 +48,16 @@ class DeviceResponse(DeviceBase):
     id: uuid.UUID
     serial_number: Optional[str] = None
     has_vdom_enabled: bool
-    vdoms: List[VDOMResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class DeviceConnectionData(BaseModel):
+    """DTO interno para consumo seguro por otros servicios (p. ej. vdoms)."""
+    device_id: uuid.UUID
+    host: str
+    port: int
+    decrypted_token: str
 
 
 class ConnectivityCheckResult(BaseModel):

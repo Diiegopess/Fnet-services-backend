@@ -1,14 +1,10 @@
-"""
-Módulo de Modelos SQLAlchemy para el Subdominio de VDOMs.
-"""
-
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.db.database import Base
+from app.infrastructure.db.database import Base  # Ajustado a la ruta estándar de la DB
 
 
 class DeviceVDOM(Base):
@@ -25,7 +21,7 @@ class DeviceVDOM(Base):
         nullable=False,
         index=True,
     )
-    client_id: Mapped[uuid.UUID] = mapped_column(
+    client_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("clients.id", ondelete="RESTRICT"),
         nullable=True,
@@ -34,10 +30,6 @@ class DeviceVDOM(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_root: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-    # Relaciones ORM
-    device = relationship("FortigateDevice", back_populates="vdoms")
-    client = relationship("Client", lazy="joined")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

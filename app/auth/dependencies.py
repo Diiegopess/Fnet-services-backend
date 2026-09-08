@@ -4,11 +4,12 @@ Módulo de Dependencias para el Dominio de Autenticación y Control de Acceso.
 
 import uuid
 from typing import Callable
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.exceptions import InactiveUserError, InvalidTokenError
 from app.auth.service import AuthService
 from app.core.events.base import EventMetadata
 from app.core.events.interfaces import IEventPublisher
@@ -57,15 +58,13 @@ async def get_current_user_id(
         payload = decode_token(token)
         user_id_str: str | None = payload.get("sub")
         if not user_id_str:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token no contiene un identificador de usuario válido.",
+            raise InvalidTokenError(
+                message="El token no contiene un identificador de usuario válido."
             )
         return uuid.UUID(user_id_str)
     except (jwt.PyJWTError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales de autenticación inválidas o expiradas.",
+        raise InvalidTokenError(
+            message="Credenciales de autenticación inválidas o expiradas."
         )
 
 
@@ -77,9 +76,8 @@ async def get_current_user(
     users_api = UsersAPI(db)
     user_context = await users_api.get_authenticated_user_context(user_id)
     if not user_context:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario no encontrado o perfil inactivo.",
+        raise InactiveUserError(
+            message="Usuario no encontrado o perfil inactivo."
         )
     return user_context
 

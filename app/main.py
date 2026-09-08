@@ -63,13 +63,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración permisiva de CORS para clientes web/móviles
+# Configuración de CORS para clientes web
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=settings.CORS_ALLOWED_METHODS,
+    allow_headers=settings.CORS_ALLOWED_HEADERS,
 )
 
 register_exception_handlers(app)

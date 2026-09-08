@@ -1,8 +1,11 @@
-# app/devices/connectors/client.py
+# app/integrations/fortigate/client.py
 
 import ssl
 from typing import Any, Dict, Optional, Union
 import httpx
+
+# Importación desde el módulo padre de integraciones (app/integrations/exceptions.py)
+from app.infrastructure.integrations.exceptions import IntegrationConnectionError, IntegrationHTTPError
 
 
 class FortiOSHttpClient:
@@ -22,7 +25,6 @@ class FortiOSHttpClient:
         self.timeout = timeout
 
     def _get_ssl_context(self) -> Union[ssl.SSLContext, bool]:
-        """Genera un contexto SSL perdonable para renegociación TLS 1.3 / mTLS en FortiGate."""
         if not self.verify_ssl:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -38,13 +40,11 @@ class FortiOSHttpClient:
         }
 
     def _clean_bytes_error(self, content: bytes) -> str:
-        """Decodifica el contenido en bytes a UTF-8 reemplazando caracteres inválidos."""
         if not content:
             return ""
         return content.decode("utf-8", errors="replace")
 
     def _safe_str(self, exc: Exception) -> str:
-        """Convierte cualquier excepción a cadena de texto sin fallar por codificación ASCII."""
         try:
             msg = str(exc)
         except Exception:
@@ -57,13 +57,9 @@ class FortiOSHttpClient:
         params: Optional[Dict[str, Any]] = None,
         skip_vdom: bool = False,
     ) -> Dict[str, Any]:
-        """Realiza peticiones GET a la API de FortiOS."""
-        url = (
-            f"{self.base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
-        )
+        url = f"{self.base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
         req_params = dict(params or {})
 
-        # Si se solicita omitir VDOM o la consulta es global
         if skip_vdom:
             req_params["global"] = 1
 
@@ -79,25 +75,15 @@ class FortiOSHttpClient:
                     url, headers=self._get_headers(), params=req_params
                 )
                 response.raise_for_status()
-
                 response.encoding = "utf-8"
                 return response.json()
 
             except httpx.HTTPStatusError as exc:
                 error_msg = self._clean_bytes_error(exc.response.content)
-                raise RuntimeError(
-                    f"Error HTTP {exc.response.status_code} desde FortiGate: {error_msg}"
-                ) from exc
-            except httpx.RequestError as exc:
+                raise IntegrationHTTPError(exc.response.status_code, error_msg) from exc
+            except (httpx.RequestError, Exception) as exc:
                 err_text = self._safe_str(exc)
-                raise RuntimeError(
-                    f"Error de red con FortiGate ({url}): {err_text}"
-                ) from exc
-            except Exception as exc:
-                err_text = self._safe_str(exc)
-                raise RuntimeError(
-                    f"Error inesperado al conectar con FortiGate ({url}): {err_text}"
-                ) from exc
+                raise IntegrationConnectionError(f"Error de red/comunicación con FortiGate ({url}): {err_text}") from exc
 
     async def post(
         self,
@@ -105,10 +91,7 @@ class FortiOSHttpClient:
         json_data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Realiza peticiones POST a la API de FortiOS."""
-        url = (
-            f"{self.base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
-        )
+        url = f"{self.base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
         req_params = dict(params or {})
 
         if "access_token" not in req_params:
@@ -134,16 +117,7 @@ class FortiOSHttpClient:
 
             except httpx.HTTPStatusError as exc:
                 error_msg = self._clean_bytes_error(exc.response.content)
-                raise RuntimeError(
-                    f"Error HTTP {exc.response.status_code} desde FortiGate: {error_msg}"
-                ) from exc
-            except httpx.RequestError as exc:
+                raise IntegrationHTTPError(exc.response.status_code, error_msg) from exc
+            except (httpx.RequestError, Exception) as exc:
                 err_text = self._safe_str(exc)
-                raise RuntimeError(
-                    f"Error de red con FortiGate ({url}): {err_text}"
-                ) from exc
-            except Exception as exc:
-                err_text = self._safe_str(exc)
-                raise RuntimeError(
-                    f"Error inesperado al conectar con FortiGate ({url}): {err_text}"
-                ) from exc
+                raise IntegrationConnectionError(f"Error de red/comunicación con FortiGate ({url}): {err_text}") from exc

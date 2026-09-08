@@ -1,33 +1,36 @@
-"""
-Excepciones de Dominio para el Módulo de Clientes.
-"""
+"""Excepciones de Dominio para el Módulo de Clientes."""
 
-from fastapi import status
-from app.core.exceptions import AppException
+from typing import Any
+from app.core.exceptions import AppException, ConflictError, NotFoundError
 
 
-class ClientNotFoundError(AppException):
-    def __init__(self, message: str = "Cliente no encontrado."):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            message=message,
-            error_code="CLIENT_NOT_FOUND",
-        )
+class ClientNotFoundError(NotFoundError):
+    def __init__(self, message: str = "Cliente no encontrado.", details: Any | None = None):
+        super().__init__(message=message, details=details)
+        self.error_code = "CLIENT_NOT_FOUND"
 
 
-class ClientAlreadyExistsError(AppException):
-    def __init__(self, message: str = "Ya existe un cliente con ese nombre o identificación fiscal."):
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            message=message,
-            error_code="CLIENT_ALREADY_EXISTS",
-        )
+class ClientAlreadyExistsError(ConflictError):
+    def __init__(
+        self,
+        message: str = "Ya existe un cliente con ese nombre o identificación fiscal.",
+        details: Any | None = None,
+    ):
+        super().__init__(message=message, details=details)
+        self.error_code = "CLIENT_ALREADY_EXISTS"
 
 
 class InvalidTechnicianAssignmentError(AppException):
-    def __init__(self, message: str = "Uno o más identificadores de técnicos no son válidos o están inactivos."):
+    """Fallo en regla de validación de negocio al asignar técnicos (HTTP 400)."""
+
+    def __init__(
+        self,
+        message: str = "Uno o más identificadores de técnicos no son válidos o están inactivos.",
+        details: Any | None = None,
+    ):
         super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
             message=message,
+            status_code=400,
             error_code="INVALID_TECHNICIAN_ASSIGNMENT",
+            details=details,
         )

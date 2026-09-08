@@ -1,4 +1,6 @@
-"""Servicio de Negocio para el Dominio de Dispositivos (Chasis Fortinet)."""
+"""
+Servicio de Negocio para el Dominio de Dispositivos (Chasis Fortinet).
+"""
 
 import uuid
 from typing import Optional, Sequence
@@ -9,13 +11,11 @@ from app.core.config import settings
 from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.security import decrypt_secret, encrypt_secret 
-from app.devices.connectors.base import IDeviceProber
+from app.infrastructure.integrations.fortigate.base import IDeviceProber
 from app.devices.exceptions import DeviceAlreadyExistsError, DeviceNotFoundError
 from app.devices.models import FortigateDevice
 from app.devices.repository import DeviceRepository
 from app.devices.schemas import ConnectivityCheckResult, DeviceCreate, DeviceUpdate
-from app.devices.vdoms.models import DeviceVDOM
-from app.devices.vdoms.repository import VDOMRepository
 
 
 class DeviceService:
@@ -29,7 +29,6 @@ class DeviceService:
         self.prober = prober
         self.publisher = publisher
         self.repo = DeviceRepository(db)
-        self.vdom_repo = VDOMRepository(db)
         self.clients_api = ClientsAPI(db)
 
     def _sanitize_error_msg(self, msg: Optional[str]) -> Optional[str]:
@@ -60,7 +59,7 @@ class DeviceService:
         device = await self.get_by_id_or_fail(device_id)
         
         # Descifrar el token persistido
-        decrypted_token = decrypt_secret(device.encrypted_api_token)
+        decrypted_token = decrypt_secret(device.encrypted_api_token) if device.encrypted_api_token else ""
         
         return await self.test_connectivity(
             host=device.host,
@@ -69,6 +68,7 @@ class DeviceService:
         )
 
     async def get_by_id_or_fail(self, device_id: uuid.UUID) -> FortigateDevice:
+        """Obtiene un dispositivo por ID o lanza excepción si no existe."""
         device = await self.repo.get_by_id(device_id)
         if not device:
             raise DeviceNotFoundError()
@@ -80,11 +80,13 @@ class DeviceService:
         limit: int = 50,
         client_id: Optional[uuid.UUID] = None, 
     ) -> Sequence[FortigateDevice]:
+        """Lista dispositivos paginados."""
         return await self.repo.get_multi(skip=skip, limit=limit, client_id=client_id)
 
     async def create_device(
         self, data: DeviceCreate, metadata: Optional[EventMetadata] = None
     ) -> FortigateDevice:
+        """Crea un nuevo dispositivo físico desacoplado de VDOMs."""
         existing = await self.repo.get_by_host(data.host)
         if existing:
             raise DeviceAlreadyExistsError()
@@ -112,7 +114,7 @@ class DeviceService:
 
         encrypted_token = encrypt_secret(data.api_token)
 
-        # 3. Creación del dispositivo (se mapea client_id explícitamente)
+        # 3. Creación del dispositivo
         device = FortigateDevice(
             name=data.name,
             host=data.host,
@@ -126,19 +128,7 @@ class DeviceService:
         )
         created_device = await self.repo.create(device)
 
-        # 4. Creación del VDOM 'root' desde el submódulo si opera en modo standalone
-        if not data.has_vdom_enabled and data.client_id:
-            root_vdom = DeviceVDOM(
-                device_id=created_device.id,
-                client_id=data.client_id,
-                name="root",
-                is_root=True,
-                is_active=True,
-            )
-            await self.vdom_repo.create(root_vdom)
-            created_device = await self.repo.get_by_id(created_device.id)
-
-        # 5. Publicación de eventos de dominio
+        # 4. Publicación de evento de dominio (los demás subdominios reaccionan si aplica)
         if self.publisher and metadata:
             event = DomainEvent(
                 event_type="device.created",
@@ -169,6 +159,7 @@ class DeviceService:
         data: DeviceUpdate,
         metadata: Optional[EventMetadata] = None,
     ) -> FortigateDevice:
+        """Actualiza la configuración o estado de un dispositivo."""
         device = await self.get_by_id_or_fail(device_id)
 
         if data.host and data.host != device.host:
@@ -215,6 +206,7 @@ class DeviceService:
     async def delete_device(
         self, device_id: uuid.UUID, metadata: Optional[EventMetadata] = None
     ) -> None:
+        """Elimina un dispositivo de la base de datos."""
         device = await self.get_by_id_or_fail(device_id)
         await self.repo.delete(device)
 

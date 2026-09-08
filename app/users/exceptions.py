@@ -1,13 +1,10 @@
-"""
-Módulo de Excepciones del Dominio de Usuarios.
-"""
+"""Módulo de Excepciones del Dominio de Usuarios."""
 
 from typing import Any
-from fastapi import status
-from app.core.exceptions import AppException
+from app.core.exceptions import ConflictError, NotFoundError
 
 
-class UserNotFoundError(AppException):
+class UserNotFoundError(NotFoundError):
     """Lanzada cuando un usuario no existe en la base de datos."""
 
     def __init__(
@@ -15,25 +12,17 @@ class UserNotFoundError(AppException):
         message: str = "El usuario solicitado no fue encontrado.",
         details: Any | None = None,
     ):
-        super().__init__(
-            message=message,
-            status_code=status.HTTP_404_NOT_FOUND,
-            error_code="USER_NOT_FOUND",
-            details=details,
-        )
+        super().__init__(message=message, details=details)
+        self.error_code = "USER_NOT_FOUND"
 
 
-class UserAlreadyExistsError(AppException):
-    """Lanzada cuando se intenta crear o actualizar un usuario con un email duplicado."""
+class UserAlreadyExistsError(ConflictError):
+    """Lanzada cuando se intenta registrar un correo duplicado."""
 
     def __init__(
         self,
         message: str = "Ya existe un usuario registrado con este correo electrónico.",
         details: Any | None = None,
     ):
-        super().__init__(
-            message=message,
-            status_code=status.HTTP_409_CONFLICT,
-            error_code="USER_ALREADY_EXISTS",
-            details=details,
-        )
+        super().__init__(message=message, details=details)
+        self.error_code = "USER_ALREADY_EXISTS"

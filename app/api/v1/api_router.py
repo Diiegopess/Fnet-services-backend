@@ -8,7 +8,7 @@ from app.users.router import router as users_router
 from app.audit.router import router as audit_router
 from app.clients.router import router as clients_router
 from app.devices.router import router as devices_router
-from app.devices.vdoms.router import router as vdoms_router
+from app.vdoms.router import router as vdoms_router
 
 api_router = APIRouter()
 

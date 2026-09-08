@@ -1,8 +1,7 @@
-# app/devices/connectors/fortios_mock.py
-
 from typing import Any, Dict, List
-from app.devices.connectors.base import DeviceConnector, VDOMConnector
-from app.devices.connectors.client import FortiOSHttpClient
+
+from app.infrastructure.integrations.fortigate.base import DeviceConnector, VDOMConnector
+from app.infrastructure.integrations.fortigate.client import FortiOSHttpClient
 from app.devices.schemas import ConnectivityCheckResult
 
 

@@ -1,15 +1,15 @@
-# app/devices/connectors/factory.py
+# app/integrations/factory.py
 
-from app.devices.connectors.base import DeviceConnector, VDOMConnector
-from app.devices.connectors.fortios_v6_4 import FortiOSV64DeviceConnector, FortiOSV64VDOMConnector
-from app.devices.connectors.fortios_v7_0 import FortiOSV70DeviceConnector, FortiOSV70VDOMConnector
-from app.devices.connectors.fortios_v7_2 import FortiOSV72DeviceConnector, FortiOSV72VDOMConnector
-from app.devices.connectors.fortios_v7_4 import FortiOSV74DeviceConnector, FortiOSV74VDOMConnector
-from app.devices.connectors.fortios_mock import FortiOSMockDeviceConnector, FortiOSMockVDOMConnector
+from app.infrastructure.integrations.fortigate.base import DeviceConnector, VDOMConnector
+from app.infrastructure.integrations.fortigate.fortigate_v6_4 import FortiOSV64DeviceConnector, FortiOSV64VDOMConnector
+from app.infrastructure.integrations.fortigate.fortigate_v7_0 import FortiOSV70DeviceConnector, FortiOSV70VDOMConnector
+from app.infrastructure.integrations.fortigate.fortigate_v7_2 import FortiOSV72DeviceConnector, FortiOSV72VDOMConnector
+from app.infrastructure.integrations.fortigate.fortigate_v7_4 import FortiOSV74DeviceConnector, FortiOSV74VDOMConnector
+from app.infrastructure.integrations.fortigate.fortigate_mock import FortiOSMockDeviceConnector, FortiOSMockVDOMConnector
 
 
 class FortiConnectorFactory:
-    """Resuelve la implementación correcta del conector según la versión del firmware o entorno."""
+    """Factoría interna para instanciar conectores específicos de FortiGate."""
 
     @staticmethod
     def get_device_connector(
@@ -30,7 +30,6 @@ class FortiConnectorFactory:
         elif version_str.startswith("7.4"):
             return FortiOSV74DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
 
-        # Default a FortiOS 7.2
         return FortiOSV72DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
 
     @staticmethod
@@ -53,5 +52,4 @@ class FortiConnectorFactory:
         elif version_str.startswith("7.4"):
             return FortiOSV74VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)
 
-        # Default a FortiOS 7.2
         return FortiOSV72VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)

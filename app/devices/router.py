@@ -1,5 +1,5 @@
 """
-Controlador HTTP para Chasis Físicos FortiGate.
+Controlador HTTP REST para Chasis Físicos FortiGate.
 """
 
 import uuid
@@ -32,10 +32,6 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
     )
 
 
-# ----------------------------------------------------------------------
-# 1. RUTAS ESTÁTICAS / ESPECÍFICAS
-# ----------------------------------------------------------------------
-
 @router.get(
     "/supported-versions",
     response_model=list[dict[str, str]],
@@ -67,6 +63,7 @@ async def test_device_connection(
         api_token=payload.api_token,
     )
 
+
 @router.post(
     "/{device_id}/test-connection",
     response_model=ConnectivityCheckResult,
@@ -79,6 +76,7 @@ async def test_existing_device_connection(
 ):
     return await service.test_existing_device_connectivity(device_id)
 
+
 @router.get(
     "",
     response_model=list[DeviceResponse],
@@ -87,7 +85,7 @@ async def test_existing_device_connection(
 async def list_devices(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    client_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de cliente"), # <-- Filtro modular por cliente
+    client_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de cliente"),
     current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.DEVICES_READ)),
     service: DeviceService = Depends(get_device_service),
 ):
@@ -109,10 +107,6 @@ async def create_device(
     metadata = _extract_metadata(request, current_user)
     return await service.create_device(data=payload, metadata=metadata)
 
-
-# ----------------------------------------------------------------------
-# 2. RUTAS DINÁMICAS
-# ----------------------------------------------------------------------
 
 @router.get(
     "/{device_id}",
@@ -146,7 +140,7 @@ async def update_device(
 @router.delete(
     "/{device_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Eliminar un dispositivo y todas sus VDOMs asociadas",
+    summary="Eliminar un dispositivo registrado",
 )
 async def delete_device(
     device_id: uuid.UUID,
