@@ -3,7 +3,7 @@ Módulo de Esquemas Pydantic v2 para el Dominio de Autenticación.
 """
 
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # --- 1. CONTRATO DE ENTRADA: REGISTRO LOCAL ---
@@ -64,5 +64,4 @@ class AuthCredentialResponse(BaseModel):
     is_active: bool
     is_email_verified: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,0 +1,11 @@
+# Importa automáticamente todas las dependencias del archivo base de producción
+-r requirements.txt
+
+# --- Pruebas Unitarias y Cobertura ---
+pytest>=8.0.0,<9.0.0
+pytest-asyncio>=0.23.0,<1.0.0
+pytest-cov>=5.0.0,<6.0.0
+respx>=0.21.0,<1.0.0
+
+# --- Linter de Arquitectura ---
+import-linter>=2.0

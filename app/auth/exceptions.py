@@ -4,7 +4,7 @@ Define las excepciones específicas para los flujos de login local, JWT y Google
 """
 
 from typing import Any
-from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError
 
 
 class InvalidCredentialsError(UnauthorizedError):
@@ -55,3 +55,15 @@ class InvalidGoogleTokenError(UnauthorizedError):
     ):
         super().__init__(message=message, details=details)
         self.error_code = "INVALID_GOOGLE_TOKEN"
+
+
+class EmailAlreadyExistsError(ConflictError):
+    """Lanzada cuando se intenta registrar una credencial con un correo que ya existe."""
+
+    def __init__(
+        self,
+        message: str = "El correo electrónico ya se encuentra registrado.",
+        details: Any | None = None,
+    ):
+        super().__init__(message=message, details=details)
+        self.error_code = "EMAIL_ALREADY_EXISTS"

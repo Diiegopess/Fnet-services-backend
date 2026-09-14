@@ -17,10 +17,17 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica si la contraseña ingresada coincide con el hash almacenado."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8")
-    )
+    if not plain_password or not hashed_password:
+        return False
+
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8")
+        )
+    except (ValueError, TypeError):
+        # Si el hash está corrupto o malformado, retornamos False en lugar de tirar un error 500
+        return False
 
 
 def create_access_token(

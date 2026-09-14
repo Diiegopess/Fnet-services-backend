@@ -1,0 +1,79 @@
+[importlinter]
+root_package = app
+sys_path =
+    .
+
+# Cada dominio: sus internos solo los toca él mismo; el resto entra por .api (libre por defecto, no está protegido)
+[importlinter:contract:auth]
+name = auth: internos protegidos
+type = protected
+protected_modules =
+    app.auth.service
+    app.auth.repository
+    app.auth.models
+allowed_importers =
+    app.auth.*
+
+[importlinter:contract:users]
+name = users: internos protegidos
+type = protected
+protected_modules =
+    app.users.service
+    app.users.repository
+    app.users.models
+allowed_importers =
+    app.users.*
+
+[importlinter:contract:devices]
+name = devices: internos protegidos
+type = protected
+protected_modules =
+    app.devices.service
+    app.devices.repository
+    app.devices.models
+allowed_importers =
+    app.devices.*
+
+[importlinter:contract:clients]
+name = clients: internos protegidos
+type = protected
+protected_modules =
+    app.clients.service
+    app.clients.repository
+    app.clients.models
+allowed_importers =
+    app.clients.*
+
+[importlinter:contract:audit]
+name = audit: internos protegidos
+type = protected
+protected_modules =
+    app.audit.service
+    app.audit.repository
+    app.audit.models
+allowed_importers =
+    app.audit.*
+
+[importlinter:contract:vdoms]
+name = vdoms: internos protegidos
+type = protected
+protected_modules =
+    app.vdoms.service
+    app.vdoms.repository
+    app.vdoms.models
+allowed_importers =
+    app.vdoms.*
+
+# Core aislado de cualquier dominio de negocio
+[importlinter:contract:core]
+name = Core es totalmente agnostico
+type = forbidden
+source_modules =
+    app.core
+forbidden_modules =
+    app.auth
+    app.users
+    app.devices
+    app.clients
+    app.audit
+    app.vdoms

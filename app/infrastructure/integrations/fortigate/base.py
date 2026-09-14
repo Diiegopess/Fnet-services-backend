@@ -4,14 +4,14 @@ Interfaces y Contratos Abstractos para la Comunicación con Fortinet (Ports & Ad
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
-from app.devices.schemas import ConnectivityCheckResult
+from app.infrastructure.integrations.fortigate.schemas import FortiGateConnectivityResult
 
 
 class IDeviceProber(ABC):
     """Puerto específico para sondas de diagnóstico de red."""
 
     @abstractmethod
-    async def   probe(self, host: str, port: int, api_token: str) -> ConnectivityCheckResult:
+    async def   probe(self, host: str, port: int, api_token: str) -> FortiGateConnectivityResult:
         """Ejecuta una sonda L7 contra el hardware FortiOS."""
         pass
 
@@ -20,7 +20,7 @@ class BaseFortiConnector(ABC):
     """Contrato base de comunicación con el hardware."""
 
     @abstractmethod
-    async def test_connectivity(self) -> ConnectivityCheckResult:
+    async def test_connectivity(self) -> FortiGateConnectivityResult:
         """Verifica alcance HTTP/API y obtiene número de serie y versión."""
         pass
 

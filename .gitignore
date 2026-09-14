@@ -21,7 +21,9 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.import_linter_cache/
 
 # --- CONFIGURACIONES DE EDITORES / IDE ---
 .vscode/
 .idea/
+

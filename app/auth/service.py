@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import (
+    EmailAlreadyExistsError,
     InactiveUserError,
     InvalidCredentialsError,
     InvalidGoogleTokenError,
@@ -23,7 +24,6 @@ from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.security import hash_password, verify_password
 from app.users.api import UsersAPI
-from app.users.exceptions import UserAlreadyExistsError
 
 
 def verify_google_token(token: str) -> dict | None:
@@ -58,7 +58,7 @@ class AuthService:
         stmt = select(AuthCredential).where(AuthCredential.email == data.email)
         result = await self.db.execute(stmt)
         if result.scalar_one_or_none():
-            raise UserAlreadyExistsError(
+            raise EmailAlreadyExistsError(
                 message="El correo electrónico ya se encuentra registrado."
             )
 

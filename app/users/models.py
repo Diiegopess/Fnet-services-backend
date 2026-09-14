@@ -12,13 +12,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, Any
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.database import Base
-
-if TYPE_CHECKING:
-    from app.clients.models import Client
 
 
 # ==============================================================================
@@ -142,8 +139,8 @@ class User(Base):
         lazy="selectin",
     )
 
-    # Relación inversa Many-to-Many con Clientes
-    assigned_clients: Mapped[List["Client"]] = relationship(
+    # Relación N:M hacia Client mediante String puro para evitar importaciones circulares
+    assigned_clients: Mapped[List[Any]] = relationship(
         "Client",
         secondary="client_technicians",
         back_populates="assigned_technicians",
