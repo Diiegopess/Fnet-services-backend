@@ -12,8 +12,7 @@ from app.core.events.interfaces import IEventPublisher
 from app.infrastructure.brokers.factory import get_event_publisher
 from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
-from app.auth.api import RequirePermissions
-
+from app.auth.api import require_permission
 from app.vdoms.exceptions import VDOMAccessDeniedError, VDOMNotFoundError
 from app.vdoms.repository import VDOMRepository
 from app.vdoms.schemas import VDOMContext
@@ -31,7 +30,7 @@ def get_vdom_service(
 async def get_authorized_vdom_context(
     vdom_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(RequirePermissions(PermissionEnum.VDOMS_READ)),
+    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.VDOMS_READ)),
 ) -> VDOMContext:
     """
     Resuelve e inyecta el VDOMContext validado.

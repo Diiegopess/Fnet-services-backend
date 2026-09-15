@@ -9,6 +9,7 @@ from app.audit.router import router as audit_router
 from app.clients.router import router as clients_router
 from app.devices.router import router as devices_router
 from app.vdoms.router import router as vdoms_router
+from app.services.hardening.router import router as hardening_router
 
 api_router = APIRouter()
 
@@ -19,3 +20,4 @@ api_router.include_router(audit_router)
 api_router.include_router(clients_router)
 api_router.include_router(devices_router)
 api_router.include_router(vdoms_router)
+api_router.include_router(hardening_router)

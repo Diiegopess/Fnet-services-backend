@@ -1,5 +1,3 @@
-#app.main.py
-
 """Punto de entrada principal de la aplicación FastAPI.
 
 Configura el ciclo de vida (startup/shutdown), middlewares, manejadores
@@ -25,6 +23,16 @@ from app.infrastructure.db.init_db import init_db
 from app.users.subscribers import setup_users_subscribers
 
 
+def _register_domain_seeders() -> None:
+    """Importa los módulos de seeder de los dominios para auto-registrarlos
+
+    en el SeederRegistry de Infraestructura antes de ejecutar la BD.
+    """
+    import app.auth.seeder  # noqa: F401
+    import app.services.hardening.seeder  # noqa: F401
+    import app.users.seeder  # noqa: F401
+
+
 def _register_event_subscribers() -> None:
     """Registra los manejadores de eventos en memoria de los módulos del sistema."""
     setup_audit_subscribers()
@@ -36,7 +44,13 @@ def _register_event_subscribers() -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Gestiona el ciclo de vida de arranque y apagado del servicio."""
     # --- Startup ---
+    # 1. Cargar seeders de los dominios en el registro central
+    _register_domain_seeders()
+
+    # 2. Inicializar BD y ejecutar seeders registrados de forma agnóstica
     await init_db()
+
+    # 3. Registrar eventos
     _register_event_subscribers()
 
     # Inicia el consumidor de colas en segundo plano sin bloquear el arranque HTTP

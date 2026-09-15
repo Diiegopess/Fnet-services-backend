@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.api import RequirePermissions
+from app.auth.api import require_permission
 from app.core.events.base import EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.rbac.permissions import PermissionEnum
@@ -44,7 +44,7 @@ def _build_metadata(request: Request, current_user: User) -> EventMetadata:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un usuario nuevo con roles",
-    dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_CREATE))],
+    dependencies=[Depends(require_permission(PermissionEnum.USERS_CREATE))],
 )
 async def admin_create_user(
     request: Request,
@@ -101,7 +101,7 @@ async def update_current_user(
     response_model=list[UserResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar usuarios",
-    dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_READ))],
+    dependencies=[Depends(require_permission(PermissionEnum.USERS_READ))],
 )
 async def list_users(
     skip: int = 0,
@@ -159,7 +159,7 @@ async def assign_user_roles(
     response_model=list[RoleResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar catálogo de roles y permisos",
-    dependencies=[Depends(RequirePermissions(PermissionEnum.USERS_READ))],
+    dependencies=[Depends(require_permission(PermissionEnum.USERS_READ))],
 )
 async def list_roles_catalog(
     db: AsyncSession = Depends(get_db),

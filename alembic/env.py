@@ -1,22 +1,29 @@
 import asyncio
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# 0. AÑADIR LA RAÍZ DEL PROYECTO AL PYTHONPATH
+# Permite que Alembic resuelva las importaciones dentro de 'app' sin importar dónde ejecutes el comando.
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
 # 1. Importar la configuración de la app y la Base declarativa
 from app.core.config import settings
 from app.infrastructure.db.database import Base
 
-# 2. IMPORTANTE: Importar TODOS los modelos para que Alembic los detecte
-from app.auth.models import AuthCredential  # noqa: F401
-from app.users.models import User  # noqa: F401
+# 2. IMPORTANTE: Importar TODOS los modelos para que Alembic reconozca las tablas
 from app.audit.models import AuditLog  # noqa: F401
+from app.auth.models import AuthCredential  # noqa: F401
 from app.clients.models import Client, client_technicians  # noqa: F401
 from app.devices.models import FortigateDevice  # noqa: F401
-from app.devices.vdoms.models import DeviceVDOM  # noqa: F401
+from app.services.hardening.models import HardeningProfile  # noqa: F401
+from app.users.models import User  # noqa: F401
 
 # Objeto de configuración de Alembic
 config = context.config
@@ -47,6 +54,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """Ejecuta las migraciones conectadas a la base de datos."""
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

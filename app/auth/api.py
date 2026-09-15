@@ -1,4 +1,3 @@
-# app/auth/api.py
 """
 API Pública del Módulo de Autenticación.
 
@@ -9,9 +8,9 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
-    RequirePermissions,
     get_current_user,
     get_current_user_id,
+    require_permission,  # <-- Corregido a snake_case
 )
 from app.auth.repository import AuthRepository
 from app.core.security import hash_password
@@ -21,7 +20,7 @@ __all__ = [
     "AuthAPI",
     "get_current_user_id",
     "get_current_user",
-    "RequirePermissions",
+    "require_permission",
 ]
 
 

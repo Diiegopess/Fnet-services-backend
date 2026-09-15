@@ -82,11 +82,8 @@ async def get_current_user(
     return user_context
 
 
-def RequirePermissions(*permissions: PermissionEnum | str) -> Callable[..., AuthenticatedUser]:
-    """
-    Inyector de dependencia para endpoints protegidos por RBAC.
-    Resuelve el AuthenticatedUser y valida sus permisos con el checker del Core.
-    """
+def require_permission(*permissions: PermissionEnum | str) -> Callable[..., AuthenticatedUser]:
+    """Inyector de dependencia para endpoints protegidos por RBAC."""
     checker = PermissionChecker(*permissions)
 
     async def dependency(

@@ -5,7 +5,7 @@ Controlador HTTP REST para VDOMs (Particiones Lógicas).
 import uuid
 from fastapi import APIRouter, Depends, Request, status
 
-from app.auth.api import RequirePermissions
+from app.auth.api import require_permission
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.permissions import PermissionEnum
@@ -42,7 +42,7 @@ async def create_vdom(
     payload: VDOMCreate,
     request: Request,
     current_user: AuthenticatedUser = Depends(
-        RequirePermissions(PermissionEnum.VDOMS_CREATE)
+        require_permission(PermissionEnum.VDOMS_CREATE)
     ),
     service: VDOMService = Depends(get_vdom_service),
 ):
@@ -59,7 +59,7 @@ async def sync_vdoms(
     device_id: uuid.UUID,
     request: Request,
     current_user: AuthenticatedUser = Depends(
-        RequirePermissions(PermissionEnum.VDOMS_CREATE)
+        require_permission(PermissionEnum.VDOMS_CREATE)
     ),
     service: VDOMService = Depends(get_vdom_service),
 ):
@@ -77,7 +77,7 @@ async def sync_vdoms(
 async def list_vdoms_by_device(
     device_id: uuid.UUID,
     current_user: AuthenticatedUser = Depends(
-        RequirePermissions(PermissionEnum.VDOMS_READ)
+        require_permission(PermissionEnum.VDOMS_READ)
     ),
     service: VDOMService = Depends(get_vdom_service),
 ):
@@ -107,7 +107,7 @@ async def update_vdom(
     payload: VDOMUpdate,
     request: Request,
     current_user: AuthenticatedUser = Depends(
-        RequirePermissions(PermissionEnum.VDOMS_UPDATE)
+        require_permission(PermissionEnum.VDOMS_UPDATE)
     ),
     service: VDOMService = Depends(get_vdom_service),
 ):
@@ -126,7 +126,7 @@ async def delete_vdom(
     vdom_id: uuid.UUID,
     request: Request,
     current_user: AuthenticatedUser = Depends(
-        RequirePermissions(PermissionEnum.VDOMS_DELETE)
+        require_permission(PermissionEnum.VDOMS_DELETE)
     ),
     service: VDOMService = Depends(get_vdom_service),
 ):

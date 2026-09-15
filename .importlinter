@@ -64,6 +64,18 @@ protected_modules =
 allowed_importers =
     app.vdoms.*
 
+[importlinter:contract:hardening]
+name = hardening: internos protegidos
+type = protected
+protected_modules =
+    app.services.hardening.service
+    app.services.hardening.repository
+    app.services.hardening.models
+    app.services.hardening.engine
+    app.services.hardening.strategies
+allowed_importers =
+    app.services.hardening.*
+
 # Core aislado de cualquier dominio de negocio
 [importlinter:contract:core]
 name = Core es totalmente agnostico
@@ -77,3 +89,4 @@ forbidden_modules =
     app.clients
     app.audit
     app.vdoms
+    app.services.hardening
