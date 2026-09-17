@@ -1,6 +1,7 @@
 # app/infrastructure/integrations/fortinet/fetcher.py
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import uuid
 
@@ -19,6 +20,7 @@ class FortinetConfigFetcher:
         port: int,
         api_token: str,
         vdom: Optional[Union[str, uuid.UUID]] = None,
+        platform: str = "fortigate",
     ) -> str:
         """Obtiene múltiples secciones del CMDB en JSON y las reconstruye en formato CLI Dump."""
         client = FortiOSRawHttpClient(
@@ -29,27 +31,15 @@ class FortinetConfigFetcher:
             timeout=self.timeout_seconds,
         )
 
-        vdom_str: Optional[str] = None
-        if vdom is not None:
-            vdom_str = str(vdom).strip()
-
+        vdom_str = str(vdom).strip() if vdom else None
         params: Dict[str, Any] = {"include_default": "1"}
         if vdom_str:
             params["vdom"] = vdom_str
 
-        # Endpoints ampliados para cubrir el catálogo completo de Hardening/CIS
-        endpoints = [
-            ("system global", "/cmdb/system/global"),
-            ("system admin", "/cmdb/system/admin"),
-            ("system interface", "/cmdb/system/interface"),
-            ("system accprofile", "/cmdb/system/accprofile"),
-            ("system password-policy", "/cmdb/system/password-policy"),
-            ("system dns", "/cmdb/system/dns"),
-            ("system ntp", "/cmdb/system/ntp"),
-            ("system central-management", "/cmdb/system/central-management"),
-            ("log syslogd setting", "/cmdb/log.syslogd/setting"),
-            ("user setting", "/cmdb/user/setting"),
-        ]
+        # Cargar los endpoints desde la carpeta definitions/ (fallback a default)
+        def_path = Path(__file__).parent / "definitions" / f"{platform}_default.json"
+        raw_defs = json.loads(def_path.read_text(encoding="utf-8")) if def_path.exists() else {"endpoints": []}
+        endpoints = [(item["block_name"], item["path"]) for item in raw_defs.get("endpoints", [])]
 
         cli_blocks: List[str] = []
 
@@ -61,11 +51,13 @@ class FortinetConfigFetcher:
 
                 cli_blocks.append(f"config {block_name}")
 
+                # Si es un objeto único (ej. config system global)
                 if isinstance(data, dict):
                     for key, val in data.items():
                         if val is not None and val != "":
                             cli_blocks.append(f'    set {key} "{val}"')
 
+                # Si es una lista de objetos (ej. interfaces, administradores)
                 elif isinstance(data, list):
                     for item in data:
                         entry_id = item.get("name") or item.get("id") or item.get("mkey", "")
@@ -78,7 +70,7 @@ class FortinetConfigFetcher:
 
                 cli_blocks.append("end")
             except Exception as e:
-                # Si un endpoint no existe en esa versión de FortiOS, continúa silenciosamente
+                print(f"DEBUG FETCHER WARNING (Endpoint {block_name}): {e}")
                 continue
 
         return "\n".join(cli_blocks)
