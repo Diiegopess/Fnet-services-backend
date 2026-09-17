@@ -4,6 +4,7 @@ Servicio de Negocio para el Módulo de VDOMs.
 
 import uuid
 from typing import Optional, Sequence
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.api import ClientsAPI
@@ -11,7 +12,6 @@ from app.core.config import settings
 from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.devices.api import DevicesAPI  # Fachada pública de Devices
-from app.infrastructure.integrations.api import IntegrationsAPI  # Fachada de Infraestructura
 
 from app.vdoms.exceptions import (
     VDOMAlreadyExistsError,
@@ -30,7 +30,6 @@ class VDOMService:
         self.vdom_repo = VDOMRepository(db)
         self.devices_api = DevicesAPI(db)
         self.clients_api = ClientsAPI(db)
-        self.integrations_api = IntegrationsAPI()
 
     async def get_by_id_or_fail(self, vdom_id: uuid.UUID) -> DeviceVDOM:
         """Obtiene un VDOM o lanza una excepción de módulo."""
@@ -94,17 +93,28 @@ class VDOMService:
     async def sync_device_vdoms(
         self, device_id: uuid.UUID, metadata: Optional[EventMetadata] = None
     ) -> VDOMSyncResult:
-        """Descubre y sincroniza VDOMs desde el hardware sin acoplar HTTP ni claves."""
+        """Descubre y sincroniza VDOMs desde el hardware sin acoplar con el integrador antiguo."""
         # 1. Obtener los datos de conexión resueltos por la fachada de dispositivos
         connection_data = await self.devices_api.get_connection_data(device_id)
 
-        # 2. Invocar a la capa de integración
+        # 2. Consulta HTTP directa al API REST del FortiGate
+        is_local = "mock" in connection_data.host.lower() or connection_data.host in ("127.0.0.1", "localhost", "testserver")
+        scheme = "http" if is_local else "https"
+        url = f"{scheme}://{connection_data.host}:{connection_data.port}/api/v2/cmdb/system/vdom"
+        headers = {"Authorization": f"Bearer {connection_data.decrypted_token}"}
+
+        raw_vdoms = []
         try:
-            raw_vdoms = await self.integrations_api.fortigate.list_vdoms(
-                host=connection_data.host,
-                port=connection_data.port,
-                token=connection_data.decrypted_token,
-            )
+            async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    payload = response.json()
+                    raw_vdoms = payload.get("results", [])
+                else:
+                    raise VDOMIntegrationError(
+                        message=f"El equipo retornó código de estado HTTP {response.status_code}",
+                        details={"status_code": response.status_code},
+                    )
         except Exception as e:
             raise VDOMIntegrationError(
                 message="Error al consultar los VDOMs en el dispositivo físico.",
@@ -116,7 +126,7 @@ class VDOMService:
 
         # 3. Mapear y procesar resultados en la base de datos
         for item in raw_vdoms:
-            vdom_name = item.name if hasattr(item, "name") else item.get("name")
+            vdom_name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
             if not vdom_name:
                 continue
 

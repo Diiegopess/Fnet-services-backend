@@ -31,17 +31,19 @@ class HardeningRepository:
 
             if existing:
                 existing.name = data["name"]
-                existing.description = data["description"]
+                existing.description = data.get("description")
                 existing.category = data["category"]
                 existing.standard = data["standard"]
+                existing.standard_version = data.get("standard_version", "v1.0.0")
                 existing.default_severity = data["default_severity"]
             else:
                 new_rule = RuleCatalog(
                     id=data["id"],
                     name=data["name"],
-                    description=data["description"],
+                    description=data.get("description"),
                     category=data["category"],
                     standard=data["standard"],
+                    standard_version=data.get("standard_version", "v1.0.0"),
                     default_severity=data["default_severity"],
                 )
                 self.session.add(new_rule)
@@ -49,14 +51,21 @@ class HardeningRepository:
         await self.session.commit()
 
     # --- Consultas de Perfiles ---
-    async def get_all_profiles(self) -> Sequence[HardeningProfile]:
+    async def get_all_profiles(
+        self, standard_version: Optional[str] = None
+    ) -> Sequence[HardeningProfile]:
         """Obtiene todos los perfiles de hardening activos cargando sus reglas asociadas."""
         stmt = (
             select(HardeningProfile)
             .options(selectinload(HardeningProfile.rules))
             .where(HardeningProfile.is_active.is_(True))
-            .order_by(HardeningProfile.created_at.desc())
         )
+
+        if standard_version:
+            stmt = stmt.where(HardeningProfile.standard_version == standard_version)
+
+        stmt = stmt.order_by(HardeningProfile.created_at.desc())
+
         result = await self.session.execute(stmt)
         return result.unique().scalars().all()
 
@@ -78,7 +87,7 @@ class HardeningRepository:
         profile = await self.get_profile_by_id(profile_id)
         return [rule.id for rule in profile.rules if rule.is_active]
 
-    # --- Persistencia de Resultados ---
+    # --- Persistencia y Consulta de Resultados ---
     async def save_audit_report(
         self,
         device_id: UUID,
@@ -113,12 +122,49 @@ class HardeningRepository:
                 rule_id=f_data["rule_id"],
                 status=f_data["status"],
                 severity=f_data["severity"],
-                current_value=f_data["current_value"],
-                expected_value=f_data["expected_value"],
-                remediation_cmd=f_data["remediation_cmd"],
+                current_value=f_data.get("current_value"),
+                expected_value=f_data.get("expected_value"),
+                remediation_cmd=f_data.get("remediation_cmd"),
             )
             self.session.add(finding)
 
         await self.session.commit()
-        await self.session.refresh(report)
-        return report
+        
+        # Volvemos a cargar el reporte junto con sus hallazgos para que Pydantic lo serialice sin problemas
+        stmt = (
+            select(AuditReport)
+            .options(selectinload(AuditReport.findings))
+            .where(AuditReport.id == report.id)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one()
+
+    async def get_report_by_id(self, report_id: UUID) -> Optional[AuditReport]:
+        """Obtiene un reporte de auditoría completo con sus hallazgos."""
+        stmt = (
+            select(AuditReport)
+            .options(selectinload(AuditReport.findings))
+            .where(AuditReport.id == report_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_reports(
+        self,
+        device_id: Optional[UUID] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[AuditReport]:
+        """Obtiene la lista de reportes de auditoría paginados."""
+        stmt = (
+            select(AuditReport)
+            .options(selectinload(AuditReport.findings))
+        )
+
+        if device_id:
+            stmt = stmt.where(AuditReport.device_id == device_id)
+
+        stmt = stmt.order_by(AuditReport.executed_at.desc()).limit(limit).offset(offset)
+
+        result = await self.session.execute(stmt)
+        return result.unique().scalars().all()

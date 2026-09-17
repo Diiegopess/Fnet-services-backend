@@ -1,3 +1,5 @@
+# app/services/hardening/engine/evaluator.py
+
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -73,9 +75,9 @@ class HardeningEvaluator:
                 "remediation_cmd": result.remediation_cmd,
             })
 
-            # 5. Cálculo del Score (PASSED / (PASSED + FAILED))
-            evaluable_total = passed + failed
-            score = round((passed / evaluable_total) * 100.0, 2) if evaluable_total > 0 else 100.0
+        # 5. Cálculo del Score global (Mover fuera del ciclo for)
+        evaluable_total = passed + failed
+        score = round((passed / evaluable_total) * 100.0, 2) if evaluable_total > 0 else 100.0
 
         return EvaluationSummary(
             score=score,

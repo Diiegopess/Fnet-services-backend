@@ -53,3 +53,5 @@ class VDOMSyncResult(BaseModel):
     total_found: int
     new_registered: int
     existing_unaltered: int
+
+    created_at: datetime

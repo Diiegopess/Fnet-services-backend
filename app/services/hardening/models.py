@@ -37,7 +37,7 @@ class ExecutionType(str, enum.Enum):
 class FindingStatus(str, enum.Enum):
     PASSED = "PASSED"
     FAILED = "FAILED"
-    NOT_APPLICABLE = "NOT_APPLICABLE"  # Eliminamos EXEMPT al no haber excepciones formales
+    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 class RuleSeverity(str, enum.Enum):
@@ -69,17 +69,14 @@ class RuleCatalog(Base):
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=False)
     standard = Column(String(50), nullable=False)
+    standard_version = Column(String(20), default="v1.0.0", nullable=False)  # Mapea con RuleCatalogResponse
     default_severity = Column(Enum(RuleSeverity), default=RuleSeverity.MEDIUM, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class HardeningProfile(Base):
-    """
-    Perfiles / Plantillas de Evaluación.
-    Si el técnico quiere quitar checks, clona un perfil SYSTEM a uno CUSTOM
-    y quita la asociación de la regla en 'hardening_profile_rules'.
-    """
+    """Perfiles / Plantillas de Evaluación."""
 
     __tablename__ = "hardening_profiles"
 
@@ -87,15 +84,12 @@ class HardeningProfile(Base):
     name = Column(String(150), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     profile_type = Column(Enum(ProfileType), default=ProfileType.CUSTOM, nullable=False)
-    
-    # Campo requerido por HardeningProfileResponse
     is_active = Column(Boolean, default=True, nullable=False)
 
-    created_by = Column(UUID(as_uuid=True), nullable=True)  # Técnico que creó la plantilla personalizada
+    created_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Reglas asociadas activamente a este perfil
     rules = relationship("RuleCatalog", secondary=profile_rules_association, backref="profiles")
 
 
@@ -105,8 +99,8 @@ class AuditReport(Base):
     __tablename__ = "hardening_audit_reports"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    device_id = Column(UUID(as_uuid=True), nullable=False)  # Removida FK directa si genera choque en init_db
-    vdom_id = Column(UUID(as_uuid=True), nullable=True)     # Se mantiene como UUID para ligar al VDOM
+    device_id = Column(UUID(as_uuid=True), nullable=False)
+    vdom_id = Column(UUID(as_uuid=True), nullable=True)
     execution_type = Column(Enum(ExecutionType), nullable=False)
     profile_id = Column(UUID(as_uuid=True), ForeignKey("hardening_profiles.id", ondelete="SET NULL"), nullable=True)
     

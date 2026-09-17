@@ -1,8 +1,10 @@
+# app/services/hardening/schemas.py
+
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services.hardening.models import (
     ExecutionType,
@@ -12,10 +14,11 @@ from app.services.hardening.models import (
 )
 
 
-# --- SCHEMAS DE REGLAS Y PERFILES ---
+# --- SCHEMAS DE CATALOGO Y REGLAS ---
 
 class RuleCatalogResponse(BaseModel):
-    id: str  # Retorna 'CIS-1.1', 'FNT-1.1', etc.
+    model_config = ConfigDict(from_attributes=True)
+    id: str
     name: str
     description: Optional[str] = None
     category: str
@@ -23,17 +26,12 @@ class RuleCatalogResponse(BaseModel):
     default_severity: RuleSeverity
     is_active: bool
 
-    @computed_field
-    @property
-    def rule_id(self) -> str:
-        """Alias computable para asegurar compatibilidad si el frontend busca 'rule_id'."""
-        return self.id
 
-    class Config:
-        from_attributes = True
-
+# --- SCHEMAS DE PERFILES ---
 
 class HardeningProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     description: Optional[str] = None
@@ -42,46 +40,56 @@ class HardeningProfileResponse(BaseModel):
     created_at: datetime
     rules: List[RuleCatalogResponse] = []
 
-    class Config:
-        from_attributes = True
-
 
 # --- SCHEMAS DE EJECUCIÓN Y AUDITORÍA ---
 
 class AuditExecutionRequest(BaseModel):
     device_id: UUID
-    raw_config: str = Field(..., description="Configuración CLI en texto plano extraída de FortiOS")
     execution_type: ExecutionType
     profile_id: Optional[UUID] = None
     adhoc_rule_ids: Optional[List[str]] = None
     vdom_id: Optional[UUID] = None
+    raw_config: Optional[str] = Field(
+        None, description="Configuración CLI en texto plano. Si se omite, se extrae en vivo."
+    )
 
 
 class FindingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     rule_id: str
     status: FindingStatus
     severity: RuleSeverity
     current_value: Optional[str] = None
+    raw_evidence: Optional[str] = Field(
+        None, description="Línea o bloque exacto de la configuración CLI analizado."
+    )
+    reason: Optional[str] = Field(
+        None, description="Justificación técnica de la evaluación de la regla."
+    )
     expected_value: Optional[str] = None
     remediation_cmd: Optional[str] = None
 
-    class Config:
-        from_attributes = True
-
 
 class AuditReportResponse(BaseModel):
-    id: UUID
-    device_id: UUID
-    vdom_id: Optional[UUID] = None
-    execution_type: ExecutionType
-    profile_id: Optional[UUID] = None
-    score: float
-    total_passed: int
-    total_failed: int
-    total_not_applicable: int
-    executed_at: datetime
-    findings: List[FindingResponse] = []
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-    class Config:
-        from_attributes = True
+    execution_id: UUID = Field(..., alias="id")
+    device_id: UUID
+    profile_id: Optional[UUID] = None
+    execution_type: ExecutionType
+    executed_at: datetime = Field(..., alias="created_at")
+
+    passed_count: int = Field(..., alias="total_passed")
+    failed_count: int = Field(..., alias="total_failed")
+    total_rules_evaluated: int = 0
+
+    findings: List[FindingResponse] = Field(default_factory=list, alias="findings_data")
+
+    @model_validator(mode="after")
+    def compute_total_rules(self) -> "AuditReportResponse":
+        """Calcula dinámicamente el total de reglas evaluadas si el atributo viene en 0."""
+        if self.total_rules_evaluated == 0:
+            self.total_rules_evaluated = self.passed_count + self.failed_count
+        return self

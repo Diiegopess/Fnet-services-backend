@@ -25,8 +25,8 @@ class DevicesAPI:
 
     async def get_connection_data(self, device_id: uuid.UUID) -> Optional[DeviceConnectionData]:
         """
-        Recupera los datos de red y credenciales descifradas necesarias 
-        para conectores remotos (p. ej. sincronización desde VDOMs).
+        Recupera los datos de red, versión de FortiOS y credenciales descifradas 
+        necesarias para conectores remotos (p. ej. sincronización de VDOMs o Hardening).
         """
         device = await self.device_repo.get_by_id(device_id)
         if not device or not device.encrypted_api_token:
@@ -38,4 +38,5 @@ class DevicesAPI:
             host=device.host,
             port=device.port,
             decrypted_token=token_decrypted,
+            fortios_version=getattr(device, "fortios_version", "7.2") or "7.2",
         )

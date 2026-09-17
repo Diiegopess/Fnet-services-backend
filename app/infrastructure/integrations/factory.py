@@ -1,55 +1,30 @@
-# app/integrations/factory.py
+# app/infrastructure/integrations/factory.py
 
-from app.infrastructure.integrations.fortigate.base import DeviceConnector, VDOMConnector
-from app.infrastructure.integrations.fortigate.fortigate_v6_4 import FortiOSV64DeviceConnector, FortiOSV64VDOMConnector
-from app.infrastructure.integrations.fortigate.fortigate_v7_0 import FortiOSV70DeviceConnector, FortiOSV70VDOMConnector
-from app.infrastructure.integrations.fortigate.fortigate_v7_2 import FortiOSV72DeviceConnector, FortiOSV72VDOMConnector
-from app.infrastructure.integrations.fortigate.fortigate_v7_4 import FortiOSV74DeviceConnector, FortiOSV74VDOMConnector
-from app.infrastructure.integrations.fortigate.fortigate_mock import FortiOSMockDeviceConnector, FortiOSMockVDOMConnector
+from app.infrastructure.integrations.fortinet.client import FortiOSRawHttpClient
+from app.infrastructure.integrations.fortinet.prober import FortinetProber
 
 
-class FortiConnectorFactory:
-    """Factoría interna para instanciar conectores específicos de FortiGate."""
+class FortinetFactory:
+    """Factoría unificada para clientes y sondeadores de Fortinet."""
 
     @staticmethod
-    def get_device_connector(
+    def get_raw_client(
         host: str,
         port: int,
         api_token: str,
-        version: str = "7.2",
         verify_ssl: bool = False,
-    ) -> DeviceConnector:
-        version_str = str(version).lower().strip()
-
-        if version_str == "mock":
-            return FortiOSMockDeviceConnector(host=host, port=port, token=api_token)
-        elif version_str.startswith("6.4"):
-            return FortiOSV64DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
-        elif version_str.startswith("7.0"):
-            return FortiOSV70DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
-        elif version_str.startswith("7.4"):
-            return FortiOSV74DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
-
-        return FortiOSV72DeviceConnector(host=host, port=port, token=api_token, verify_ssl=verify_ssl)
+        timeout: float = 30.0,
+    ) -> FortiOSRawHttpClient:
+        """Instancia el cliente HTTP síncrono/asíncrono de bajo nivel."""
+        return FortiOSRawHttpClient(
+            host=host,
+            port=port,
+            token=api_token,
+            verify_ssl=verify_ssl,
+            timeout=timeout,
+        )
 
     @staticmethod
-    def get_vdom_connector(
-        host: str,
-        port: int,
-        api_token: str,
-        vdom_name: str,
-        version: str = "7.2",
-        verify_ssl: bool = False,
-    ) -> VDOMConnector:
-        version_str = str(version).lower().strip()
-
-        if version_str == "mock":
-            return FortiOSMockVDOMConnector(vdom=vdom_name, host=host, port=port, token=api_token)
-        elif version_str.startswith("6.4"):
-            return FortiOSV64VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)
-        elif version_str.startswith("7.0"):
-            return FortiOSV70VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)
-        elif version_str.startswith("7.4"):
-            return FortiOSV74VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)
-
-        return FortiOSV72VDOMConnector(host=host, port=port, token=api_token, vdom=vdom_name, verify_ssl=verify_ssl)
+    def get_prober(timeout_seconds: float = 5.0) -> FortinetProber:
+        """Instancia el verificador de conectividad."""
+        return FortinetProber(timeout_seconds=timeout_seconds)

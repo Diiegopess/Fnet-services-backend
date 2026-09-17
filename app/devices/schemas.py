@@ -53,11 +53,12 @@ class DeviceResponse(DeviceBase):
 
 
 class DeviceConnectionData(BaseModel):
-    """DTO interno para consumo seguro por otros servicios (p. ej. vdoms)."""
+    """DTO interno para consumo seguro por otros servicios (p. ej. vdoms, hardening)."""
     device_id: uuid.UUID
     host: str
     port: int
     decrypted_token: str
+    fortios_version: str = Field(default="7.2", description="Versión de FortiOS registrada en el dispositivo")
 
 
 class ConnectivityCheckResult(BaseModel):

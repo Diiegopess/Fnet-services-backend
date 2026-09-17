@@ -10,8 +10,8 @@ from app.clients.api import ClientsAPI, ClientNotFoundError
 from app.core.config import settings
 from app.core.events.base import DomainEvent, EventMetadata
 from app.core.events.interfaces import IEventPublisher
-from app.core.security import decrypt_secret, encrypt_secret 
-from app.infrastructure.integrations.fortigate.base import IDeviceProber
+from app.core.security import decrypt_secret, encrypt_secret
+from app.infrastructure.integrations.fortinet.prober import FortinetProber
 from app.devices.exceptions import DeviceAlreadyExistsError, DeviceNotFoundError
 from app.devices.models import FortigateDevice
 from app.devices.repository import DeviceRepository
@@ -22,11 +22,12 @@ class DeviceService:
     def __init__(
         self,
         db: AsyncSession,
-        prober: IDeviceProber,
+        prober: Optional[FortinetProber] = None,
         publisher: Optional[IEventPublisher] = None,
     ):
         self.db = db
-        self.prober = prober
+        # Se asigna la sonda del nuevo integrador (o se instancia por defecto)
+        self.prober = prober or FortinetProber()
         self.publisher = publisher
         self.repo = DeviceRepository(db)
         self.clients_api = ClientsAPI(db)
@@ -40,7 +41,7 @@ class DeviceService:
     async def test_connectivity(
         self, host: str, port: int, api_token: str
     ) -> ConnectivityCheckResult:
-        """Prueba de diagnóstico desacoplada invocada a través del puerto IDeviceProber."""
+        """Prueba de diagnóstico invocada a través de la sonda FortinetProber."""
         result = await self.prober.probe(
             host=host, port=port, api_token=api_token
         )
@@ -128,7 +129,7 @@ class DeviceService:
         )
         created_device = await self.repo.create(device)
 
-        # 4. Publicación de evento de dominio (los demás subdominios reaccionan si aplica)
+        # 4. Publicación de evento de dominio
         if self.publisher and metadata:
             event = DomainEvent(
                 event_type="device.created",

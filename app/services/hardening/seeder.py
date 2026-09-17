@@ -1,84 +1,101 @@
 # app/services/hardening/seeder.py
+
 import logging
-import uuid
+from uuid import uuid4
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+# Forzar la importación del paquete de estrategias para ejecutar los decoradores de registro
+import app.services.hardening.strategies  # noqa: F401
 from app.infrastructure.db.seeder_registry import SeederRegistry
 from app.services.hardening.models import HardeningProfile, ProfileType, RuleCatalog
+from app.services.hardening.repository import HardeningRepository
 from app.services.hardening.strategies.registry import RuleRegistry
-
-# Módulos de reglas que se auto-registran mediante @register_rule
-import app.services.hardening.strategies.fortinet.system_rules  # noqa: F401
-import app.services.hardening.strategies.gamma.admin_rules  # noqa: F401
-import app.services.hardening.strategies.cis.network_rules  # noqa: F401 
 
 logger = logging.getLogger(__name__)
 
 
 @SeederRegistry.register
-async def seed_hardening_domain(session) -> None:
-    """Sincroniza las reglas de Hardening y perfiles SYSTEM en la BD."""
-    code_rules = RuleRegistry.get_all_rules()
-    if not code_rules:
-        logger.warning("[SEED_HARDENING] No hay reglas registradas en RuleRegistry.")
+async def seed_hardening_data(session: AsyncSession) -> None:
+    """Seeder para sincronizar el catálogo de reglas y actualizar los perfiles base."""
+    repository = HardeningRepository(session)
+
+    # 1. Obtener la lista de reglas registradas
+    registered_rules = RuleRegistry.get_all_rules()
+    if not registered_rules:
+        logger.warning("--> [HARDENING SEEDER] No se encontraron reglas registradas en memoria.")
         return
 
-    res_db_rules = await session.execute(select(RuleCatalog))
-    db_rules = {r.id: r for r in res_db_rules.scalars().all()}
-    rules_by_standard: dict[str, list[RuleCatalog]] = {}
+    # 2. Mapear las instancias de regla extrayendo el valor del Enum de severidad si aplica
+    rules_payload = []
+    for rule in registered_rules:
+        rule_identifier = getattr(rule, "rule_id", getattr(rule, "id", None))
+        
+        if not rule_identifier:
+            logger.warning(f"--> [HARDENING SEEDER] Regla omitida por no tener 'rule_id' ni 'id': {type(rule).__name__}")
+            continue
 
-    for rule_inst in code_rules:
-        rule_id = rule_inst.rule_id
-        if rule_id not in db_rules:
-            db_rule = RuleCatalog(
-                id=rule_id,
-                name=rule_inst.name,
-                description=rule_inst.description,
-                category=rule_inst.category,
-                standard=rule_inst.standard,
-                default_severity=rule_inst.default_severity,
-                is_active=True,
-            )
-            session.add(db_rule)
-            db_rules[rule_id] = db_rule
-            logger.info(f"[SEED_HARDENING] Regla agregada: {rule_id}")
-        else:
-            db_rule = db_rules[rule_id]
-            # Sincronizar datos si cambiaron en el código
-            db_rule.name = rule_inst.name
-            db_rule.description = rule_inst.description
-            db_rule.category = rule_inst.category
-            db_rule.standard = rule_inst.standard
-            db_rule.default_severity = rule_inst.default_severity
+        raw_severity = getattr(rule, "severity", getattr(rule, "default_severity", "MEDIUM"))
+        # Extraer string si es Enum
+        severity_value = raw_severity.value if hasattr(raw_severity, "value") else str(raw_severity)
 
-        standard_key = rule_inst.standard.upper()
-        rules_by_standard.setdefault(standard_key, []).append(db_rule)
+        rules_payload.append({
+            "id": str(rule_identifier),
+            "name": getattr(rule, "name", type(rule).__name__),
+            "description": getattr(rule, "description", None),
+            "category": getattr(rule, "category", "General"),
+            "standard": getattr(rule, "standard", "CIS"),
+            "standard_version": getattr(rule, "standard_version", "v1.2.0"),
+            "default_severity": severity_value,
+        })
 
-    await session.flush()
+    if not rules_payload:
+        logger.warning("--> [HARDENING SEEDER] No se construyó ningún payload válido de reglas.")
+        return
 
-    res_profiles = await session.execute(
-        select(HardeningProfile).options(selectinload(HardeningProfile.rules))
+    # 3. Sincronizar las reglas con la base de datos
+    logger.info(f"--> [HARDENING SEEDER] Sincronizando {len(rules_payload)} reglas con la BD...")
+    await repository.sync_rule_catalog(rules_payload)
+
+    # 4. Obtener todas las reglas activas actualizadas desde la BD
+    rules_stmt = select(RuleCatalog).where(RuleCatalog.is_active.is_(True))
+    all_rules_result = await session.execute(rules_stmt)
+    catalog_rules = list(all_rules_result.scalars().all())
+
+    # 5. Sincronizar / Asignar reglas a los Perfiles Sistema (SYSTEM)
+    stmt = select(HardeningProfile).options(selectinload(HardeningProfile.rules)).where(
+        HardeningProfile.profile_type == ProfileType.SYSTEM
     )
-    db_profiles = {p.name: p for p in res_profiles.scalars().all()}
+    result = await session.execute(stmt)
+    system_profiles = result.scalars().all()
 
-    for standard_name, rules_list in rules_by_standard.items():
-        profile_name = f"Perfil Base {standard_name}"
-        profile_desc = f"Plantilla predeterminada del estándar {standard_name}."
+    if not system_profiles:
+        logger.info("--> [HARDENING SEEDER] Creando perfil base inicial CIS Benchmark...")
+        
+        cis_rules = [r for r in catalog_rules if r.standard == "CIS"]
 
-        if profile_name not in db_profiles:
-            profile = HardeningProfile(
-                id=uuid.uuid4(),
-                name=profile_name,
-                description=profile_desc,
-                profile_type=ProfileType.SYSTEM,
-                is_active=True,
-                rules=rules_list,
-            )
-            session.add(profile)
-            logger.info(f"[SEED_HARDENING] Perfil creado: {profile_name}")
-        else:
-            profile = db_profiles[profile_name]
-            profile.rules = rules_list
+        default_profile = HardeningProfile(
+            id=uuid4(),
+            name="Perfil Base CIS",
+            description="Plantilla predeterminada del estándar CIS.",
+            profile_type=ProfileType.SYSTEM,
+            is_active=True,
+            rules=cis_rules
+        )
 
-    await session.flush()
+        session.add(default_profile)
+        await session.commit()
+        logger.info("--> [HARDENING SEEDER] Perfil base creado con éxito.")
+    else:
+        logger.info("--> [HARDENING SEEDER] Actualizando reglas asociadas a los perfiles de sistema...")
+        for profile in system_profiles:
+            if "CIS" in profile.name.upper():
+                profile.rules = [r for r in catalog_rules if r.standard == "CIS"]
+            elif "GAMMA" in profile.name.upper():
+                profile.rules = [r for r in catalog_rules if r.standard == "GAMMA"]
+            elif "FORTINET" in profile.name.upper():
+                profile.rules = [r for r in catalog_rules if r.standard in ("FORTINET", "FORTI")]
+
+        await session.commit()
+        logger.info("--> [HARDENING SEEDER] Perfiles actualizados exitosamente con todas las reglas.")

@@ -150,3 +150,6 @@ async def delete_device(
 ):
     metadata = _extract_metadata(request, current_user)
     await service.delete_device(device_id=device_id, metadata=metadata)
+
+
+    

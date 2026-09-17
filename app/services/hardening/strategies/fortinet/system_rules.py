@@ -14,6 +14,7 @@ class CustomAdminPortRule(BaseRule):
     description = "Evita exponer la consola de gestión en el puerto por defecto 443."
     category = "System"
     standard = "FORTINET"
+    standard_version = "v1.0.0"
     default_severity = RuleSeverity.MEDIUM
 
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
