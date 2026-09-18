@@ -7,5 +7,9 @@ pytest-asyncio>=0.23.0,<1.0.0
 pytest-cov>=5.0.0,<6.0.0
 respx>=0.21.0,<1.0.0
 
+# --- Generación y Exportación de Documentos ---
+reportlab>=4.0.0,<5.0.0
+python-docx>=1.0.0,<2.0.0
+
 # --- Linter de Arquitectura ---
 import-linter>=2.0

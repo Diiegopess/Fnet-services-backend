@@ -1,7 +1,6 @@
 # app/infrastructure/integrations/fortinet/fetcher.py
 
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import uuid
 
@@ -9,20 +8,26 @@ from app.infrastructure.integrations.fortinet.client import FortiOSRawHttpClient
 
 
 class FortinetConfigFetcher:
-    """Extractor desacoplado compatible con permisos de solo lectura (super_admin_readonly)."""
+    """Extractor desacoplado para FortiOS REST API compatible con permisos de solo lectura."""
 
     def __init__(self, timeout_seconds: float = 30.0):
         self.timeout_seconds = timeout_seconds
 
-    async def fetch_cli_dump(
+    async def fetch_endpoints_data(
         self,
         host: str,
         port: int,
         api_token: str,
+        endpoints: List[str],
         vdom: Optional[Union[str, uuid.UUID]] = None,
-        platform: str = "fortigate",
-    ) -> str:
-        """Obtiene múltiples secciones del CMDB en JSON y las reconstruye en formato CLI Dump."""
+    ) -> Dict[str, Any]:
+        """Consulta una lista dinámica de endpoints REST y devuelve un mapa con sus respuestas JSON.
+        
+        Args:
+            endpoints: Lista de rutas de la API, ej: ['api/v2/cmdb/system/global', 'api/v2/cmdb/log.disk/setting']
+        Returns:
+            Dict[str, Any]: Un diccionario donde la clave es el endpoint y el valor es la respuesta parseada.
+        """
         client = FortiOSRawHttpClient(
             host=host,
             port=port,
@@ -36,41 +41,22 @@ class FortinetConfigFetcher:
         if vdom_str:
             params["vdom"] = vdom_str
 
-        # Cargar los endpoints desde la carpeta definitions/ (fallback a default)
-        def_path = Path(__file__).parent / "definitions" / f"{platform}_default.json"
-        raw_defs = json.loads(def_path.read_text(encoding="utf-8")) if def_path.exists() else {"endpoints": []}
-        endpoints = [(item["block_name"], item["path"]) for item in raw_defs.get("endpoints", [])]
+        # Mapeo: { "api/v2/cmdb/system/global": { "status": "success", "results": {...} } }
+        retrieved_data: Dict[str, Any] = {}
 
-        cli_blocks: List[str] = []
+        # Deduplicar la lista de endpoints requeridos
+        unique_endpoints = list(set(endpoints))
 
-        for block_name, path in endpoints:
+        for endpoint in unique_endpoints:
+            # Normalizar ruta eliminando la barra inicial si existe
+            clean_endpoint = endpoint.lstrip("/")
             try:
-                raw_json = await client.get_raw_text(endpoint=path, params=params)
+                raw_json = await client.get_raw_text(endpoint=clean_endpoint, params=params)
                 res_data = json.loads(raw_json)
-                data = res_data.get("results", {})
-
-                cli_blocks.append(f"config {block_name}")
-
-                # Si es un objeto único (ej. config system global)
-                if isinstance(data, dict):
-                    for key, val in data.items():
-                        if val is not None and val != "":
-                            cli_blocks.append(f'    set {key} "{val}"')
-
-                # Si es una lista de objetos (ej. interfaces, administradores)
-                elif isinstance(data, list):
-                    for item in data:
-                        entry_id = item.get("name") or item.get("id") or item.get("mkey", "")
-                        if entry_id:
-                            cli_blocks.append(f'    edit "{entry_id}"')
-                            for k, v in item.items():
-                                if v is not None and v != "" and k not in ("name", "id"):
-                                    cli_blocks.append(f'        set {k} "{v}"')
-                            cli_blocks.append("    next")
-
-                cli_blocks.append("end")
+                retrieved_data[clean_endpoint] = res_data
             except Exception as e:
-                print(f"DEBUG FETCHER WARNING (Endpoint {block_name}): {e}")
-                continue
+                # Si un endpoint falla (ej. 404 por versión o licenciamiento), se inicializa vacío
+                print(f"[FETCHER WARNING] Error al consultar endpoint '{clean_endpoint}': {e}")
+                retrieved_data[clean_endpoint] = {}
 
-        return "\n".join(cli_blocks)
+        return retrieved_data

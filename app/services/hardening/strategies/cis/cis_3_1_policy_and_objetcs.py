@@ -21,23 +21,59 @@ class AvoidAllInPoliciesRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.HIGH
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         overly_permissive = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    action = policy_data.get("action", "accept")
-                    status = policy_data.get("status", "enable")
+            results = policies.get("results", policies)
 
-                    if action == "accept" and status != "disable":
-                        srcaddr = str(policy_data.get("srcaddr", "")).lower()
-                        dstaddr = str(policy_data.get("dstaddr", "")).lower()
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        action = policy.get("action", "accept")
+                        status = policy.get("status", "enable")
 
-                        if "all" in srcaddr.split() and "all" in dstaddr.split():
-                            overly_permissive.append(str(policy_id))
+                        if action == "accept" and status != "disable":
+                            # En API REST srcaddr/dstaddr pueden ser listas de dicts [{'name': 'all'}]
+                            src_raw = policy.get("srcaddr", "")
+                            dst_raw = policy.get("dstaddr", "")
+
+                            src_str = (
+                                " ".join([item.get("name", "") for item in src_raw])
+                                if isinstance(src_raw, list)
+                                else str(src_raw)
+                            ).lower()
+
+                            dst_str = (
+                                " ".join([item.get("name", "") for item in dst_raw])
+                                if isinstance(dst_raw, list)
+                                else str(dst_raw)
+                            ).lower()
+
+                            if "all" in src_str.split() and "all" in dst_str.split():
+                                overly_permissive.append(str(policy.get("policyid", policy.get("q_origin_key", "N/A"))))
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        action = policy_data.get("action", "accept")
+                        status = policy_data.get("status", "enable")
+
+                        if action == "accept" and status != "disable":
+                            srcaddr = str(policy_data.get("srcaddr", "")).lower()
+                            dstaddr = str(policy_data.get("dstaddr", "")).lower()
+
+                            if "all" in srcaddr.split() and "all" in dstaddr.split():
+                                overly_permissive.append(str(policy_id))
 
         if overly_permissive:
             return RuleResult(
@@ -45,12 +81,20 @@ class AvoidAllInPoliciesRule(BaseRule):
                 current_value=f"Políticas permitiendo de 'all' a 'all': IDs {', '.join(overly_permissive)}",
                 expected_value="Restringir los objetos de red de origen o destino a IPs/redes específicas",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit <ID_POLITICA>\n"
-                    "        set srcaddr <Objeto_Origen_Especifico>\n"
-                    "        set dstaddr <Objeto_Destino_Especifico>\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Edite las políticas afectadas para acotar las direcciones de origen/destino:\n"
+                    "     config firewall policy\n"
+                    "         edit <ID_POLITICA>\n"
+                    "             set srcaddr <Objeto_Origen_Especifico>\n"
+                    "             set dstaddr <Objeto_Destino_Especifico>\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Seleccione y edite la regla observada.\n"
+                    "   c. Reemplace el objeto 'all' en Source o Destination por objetos/grupos específicos.\n"
+                    "   d. Guarde los cambios haciendo clic en 'OK'."
                 ),
             )
 
@@ -78,20 +122,40 @@ class DisableUnusedPoliciesRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.MEDIUM
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         unlogged_policies = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    action = policy_data.get("action", "accept")
-                    status = policy_data.get("status", "enable")
-                    logtraffic = policy_data.get("logtraffic", "disable")
+            results = policies.get("results", policies)
 
-                    if action == "accept" and status != "disable" and logtraffic == "disable":
-                        unlogged_policies.append(str(policy_id))
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        action = policy.get("action", "accept")
+                        status = policy.get("status", "enable")
+                        logtraffic = policy.get("logtraffic", "disable")
+
+                        if action == "accept" and status != "disable" and logtraffic == "disable":
+                            unlogged_policies.append(str(policy.get("policyid", policy.get("q_origin_key", "N/A"))))
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        action = policy_data.get("action", "accept")
+                        status = policy_data.get("status", "enable")
+                        logtraffic = policy_data.get("logtraffic", "disable")
+
+                        if action == "accept" and status != "disable" and logtraffic == "disable":
+                            unlogged_policies.append(str(policy_id))
 
         if unlogged_policies:
             return RuleResult(
@@ -99,11 +163,19 @@ class DisableUnusedPoliciesRule(BaseRule):
                 current_value=f"Políticas de aceptación sin log de tráfico: IDs {', '.join(unlogged_policies)}",
                 expected_value="logtraffic: all o utm en todas las políticas activas",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit <ID_POLITICA>\n"
-                    "        set logtraffic all\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Habilite el registro de tráfico en las políticas correspondientes:\n"
+                    "     config firewall policy\n"
+                    "         edit <ID_POLITICA>\n"
+                    "             set logtraffic all\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Edite la regla requerida.\n"
+                    "   c. En la sección 'Log Allowed Traffic', seleccione 'All Sessions' (o 'Security Events').\n"
+                    "   d. Guarde los cambios haciendo clic en 'OK'."
                 ),
             )
 
@@ -131,20 +203,46 @@ class AvoidAnyServiceInPoliciesRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.HIGH
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         any_service_policies = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    action = policy_data.get("action", "accept")
-                    status = policy_data.get("status", "enable")
-                    service = str(policy_data.get("service", "")).lower()
+            results = policies.get("results", policies)
 
-                    if action == "accept" and status != "disable" and "all" in service.split():
-                        any_service_policies.append(str(policy_id))
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        action = policy.get("action", "accept")
+                        status = policy.get("status", "enable")
+                        service_raw = policy.get("service", "")
+
+                        service_str = (
+                            " ".join([item.get("name", "") for item in service_raw])
+                            if isinstance(service_raw, list)
+                            else str(service_raw)
+                        ).lower()
+
+                        if action == "accept" and status != "disable" and "all" in service_str.split():
+                            any_service_policies.append(str(policy.get("policyid", policy.get("q_origin_key", "N/A"))))
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        action = policy_data.get("action", "accept")
+                        status = policy_data.get("status", "enable")
+                        service = str(policy_data.get("service", "")).lower()
+
+                        if action == "accept" and status != "disable" and "all" in service.split():
+                            any_service_policies.append(str(policy_id))
 
         if any_service_policies:
             return RuleResult(
@@ -152,11 +250,19 @@ class AvoidAnyServiceInPoliciesRule(BaseRule):
                 current_value=f"Políticas que permiten el servicio 'ALL': IDs {', '.join(any_service_policies)}",
                 expected_value="Especificar los servicios/puertos explícitos requeridos por el negocio",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit <ID_POLITICA>\n"
-                    "        set service \"HTTPS\" \"HTTP\"\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Reemplace el servicio ALL por puertos y protocolos específicos:\n"
+                    "     config firewall policy\n"
+                    "         edit <ID_POLITICA>\n"
+                    "             set service \"HTTPS\" \"HTTP\"\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Edite la regla afectada.\n"
+                    "   c. En el campo 'Service', elimine 'ALL' y seleccione únicamente los servicios estrictamente necesarios.\n"
+                    "   d. Confirme haciendo clic en 'OK'."
                 ),
             )
 
@@ -184,11 +290,20 @@ class EnsureImplicitDenyLogRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.MEDIUM
 
+    # Endpoint para API REST de FortiOS (se valida global / policy)
+    required_endpoint = "api/v2/cmdb/system/global"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
         policy_0 = parsed_config.get("config firewall policy 0") or {}
-        global_config = parsed_config.get("config system global") or parsed_config.get("system global", {})
+        global_config = (
+            parsed_config.get("config system global")
+            or parsed_config.get("system global")
+            or parsed_config
+        )
 
-        # También se valida a nivel global según la versión de FortiOS
+        if isinstance(global_config, dict) and "results" in global_config:
+            global_config = global_config["results"]
+
         block_log = global_config.get("block-session-timer", None)
         policy_0_log = policy_0.get("logtraffic", "disable")
 
@@ -198,11 +313,19 @@ class EnsureImplicitDenyLogRule(BaseRule):
                 current_value="Regla implícita de denegación (ID 0) sin registro de logs activo",
                 expected_value="logtraffic: all en la política implícita 0 o política explícita deny al final",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit 0\n"
-                    "        set logtraffic all\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Active los logs en la política implícita de denegación (ID 0):\n"
+                    "     config firewall policy\n"
+                    "         edit 0\n"
+                    "             set logtraffic all\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Desplácese hasta el final de la lista donde se muestra la regla 'Implicit Deny'.\n"
+                    "   c. Haga clic derecho sobre la regla y seleccione 'Edit' o active la opción para registrar tráfico denegado.\n"
+                    "   d. Asegúrese de guardar los cambios seleccionando 'OK'."
                 ),
             )
 
@@ -212,7 +335,8 @@ class EnsureImplicitDenyLogRule(BaseRule):
             expected_value="Logs habilitados para tráfico denegado por defecto",
         )
 
-    # =============================================================================
+
+# =============================================================================
 # CIS 3.1.5 - Ensure Security Profiles (UTM) are Enabled on Accept Policies
 # =============================================================================
 @register_rule
@@ -229,21 +353,40 @@ class EnsureUTMProfilesInAcceptPoliciesRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.HIGH
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         unprotected_policies = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    action = policy_data.get("action", "accept")
-                    status = policy_data.get("status", "enable")
-                    utm_status = policy_data.get("utm-status", "disable")
+            results = policies.get("results", policies)
 
-                    # Verificar si la política está activa, acepta tráfico y no tiene UTM habilitado
-                    if action == "accept" and status != "disable" and utm_status != "enable":
-                        unprotected_policies.append(str(policy_id))
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        action = policy.get("action", "accept")
+                        status = policy.get("status", "enable")
+                        utm_status = policy.get("utm-status", "disable")
+
+                        if action == "accept" and status != "disable" and utm_status != "enable":
+                            unprotected_policies.append(str(policy.get("policyid", policy.get("q_origin_key", "N/A"))))
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        action = policy_data.get("action", "accept")
+                        status = policy_data.get("status", "enable")
+                        utm_status = policy_data.get("utm-status", "disable")
+
+                        if action == "accept" and status != "disable" and utm_status != "enable":
+                            unprotected_policies.append(str(policy_id))
 
         if unprotected_policies:
             return RuleResult(
@@ -251,14 +394,22 @@ class EnsureUTMProfilesInAcceptPoliciesRule(BaseRule):
                 current_value=f"Políticas de aceptación sin perfiles UTM: IDs {', '.join(unprotected_policies)}",
                 expected_value="utm-status: enable con perfiles de seguridad asociados",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit <ID_POLITICA>\n"
-                    "        set utm-status enable\n"
-                    "        set av-profile \"default\"\n"
-                    "        set ips-sensor \"default\"\n"
-                    "        set webfilter-profile \"default\"\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Habilite el uso de UTM y asigne los perfiles requeridos:\n"
+                    "     config firewall policy\n"
+                    "         edit <ID_POLITICA>\n"
+                    "             set utm-status enable\n"
+                    "             set av-profile \"default\"\n"
+                    "             set ips-sensor \"default\"\n"
+                    "             set webfilter-profile \"default\"\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Edite la política que requiere inspección.\n"
+                    "   c. En el apartado 'Security Profiles', active el conmutador global de seguridad o active individualmente los perfiles (AntiVirus, Web Filter, IPS, etc.).\n"
+                    "   d. Guarde la configuración mediante 'OK'."
                 ),
             )
 
@@ -268,8 +419,7 @@ class EnsureUTMProfilesInAcceptPoliciesRule(BaseRule):
             expected_value="Inspección UTM activa en políticas permitidas",
         )
 
-
-# =============================================================================
+ # =============================================================================
 # CIS 3.1.6 - Ensure Deep SSL Inspection is Enabled on Sensitive Policies
 # =============================================================================
 @register_rule
@@ -286,23 +436,52 @@ class EnsureSSLDeepInspectionRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.MEDIUM
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         no_deep_inspection = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    action = policy_data.get("action", "accept")
-                    status = policy_data.get("status", "enable")
-                    utm_status = policy_data.get("utm-status", "disable")
-                    ssl_ssh = str(policy_data.get("ssl-ssh-profile", "")).lower()
+            results = policies.get("results", policies)
 
-                    if action == "accept" and status != "disable" and utm_status == "enable":
-                        # Se evalúa si usa el certificado por defecto o no está en deep-inspection
-                        if not ssl_ssh or ssl_ssh in ["no-inspection", "certificate-inspection"]:
-                            no_deep_inspection.append(str(policy_id))
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        action = policy.get("action", "accept")
+                        status = policy.get("status", "enable")
+                        utm_status = policy.get("utm-status", "disable")
+                        
+                        ssl_ssh_raw = policy.get("ssl-ssh-profile", "")
+                        ssl_ssh = (
+                            ssl_ssh_raw.get("name", "")
+                            if isinstance(ssl_ssh_raw, dict)
+                            else str(ssl_ssh_raw)
+                        ).lower()
+
+                        if action == "accept" and status != "disable" and utm_status == "enable":
+                            if not ssl_ssh or ssl_ssh in ["no-inspection", "certificate-inspection"]:
+                                no_deep_inspection.append(
+                                    str(policy.get("policyid", policy.get("q_origin_key", "N/A")))
+                                )
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        action = policy_data.get("action", "accept")
+                        status = policy_data.get("status", "enable")
+                        utm_status = policy_data.get("utm-status", "disable")
+                        ssl_ssh = str(policy_data.get("ssl-ssh-profile", "")).lower()
+
+                        if action == "accept" and status != "disable" and utm_status == "enable":
+                            if not ssl_ssh or ssl_ssh in ["no-inspection", "certificate-inspection"]:
+                                no_deep_inspection.append(str(policy_id))
 
         if no_deep_inspection:
             return RuleResult(
@@ -310,11 +489,20 @@ class EnsureSSLDeepInspectionRule(BaseRule):
                 current_value=f"Políticas usando inspección superficial o nula: IDs {', '.join(no_deep_inspection)}",
                 expected_value="ssl-ssh-profile configurado con 'deep-inspection'",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    edit <ID_POLITICA>\n"
-                    "        set ssl-ssh-profile \"deep-inspection\"\n"
-                    "    next\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Asigne el perfil de inspección profunda a las políticas afectadas:\n"
+                    "     config firewall policy\n"
+                    "         edit <ID_POLITICA>\n"
+                    "             set ssl-ssh-profile \"deep-inspection\"\n"
+                    "         next\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Edite la regla requerida.\n"
+                    "   c. En la sección 'Security Profiles', ubique el apartado 'SSL Inspection'.\n"
+                    "   d. Cambie el perfil de 'certificate-inspection' a 'deep-inspection' (asegúrese de haber desplegado el certificado CA en los clientes).\n"
+                    "   e. Guarde los cambios haciendo clic en 'OK'."
                 ),
             )
 
@@ -342,17 +530,36 @@ class AuditDisabledPoliciesRule(BaseRule):
     standard = "CIS"
     default_severity = RuleSeverity.LOW
 
+    # Endpoint para API REST de FortiOS
+    required_endpoint = "api/v2/cmdb/firewall/policy"
+
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
-        policies = parsed_config.get("config firewall policy") or parsed_config.get("firewall policy", {})
+        policies = (
+            parsed_config.get("config firewall policy")
+            or parsed_config.get("firewall policy")
+            or parsed_config
+        )
 
         disabled_policies = []
 
         if isinstance(policies, dict):
-            for policy_id, policy_data in policies.items():
-                if isinstance(policy_data, dict):
-                    status = policy_data.get("status", "enable")
-                    if status == "disable":
-                        disabled_policies.append(str(policy_id))
+            results = policies.get("results", policies)
+
+            if isinstance(results, list):
+                for policy in results:
+                    if isinstance(policy, dict):
+                        status = policy.get("status", "enable")
+                        if status == "disable":
+                            disabled_policies.append(
+                                str(policy.get("policyid", policy.get("q_origin_key", "N/A")))
+                            )
+
+            elif isinstance(results, dict):
+                for policy_id, policy_data in results.items():
+                    if isinstance(policy_data, dict):
+                        status = policy_data.get("status", "enable")
+                        if status == "disable":
+                            disabled_policies.append(str(policy_id))
 
         if disabled_policies:
             return RuleResult(
@@ -360,9 +567,17 @@ class AuditDisabledPoliciesRule(BaseRule):
                 current_value=f"Políticas de firewall deshabilitadas presentes: IDs {', '.join(disabled_policies)}",
                 expected_value="Revisar y eliminar políticas deshabilitadas que no sean necesarias",
                 remediation_cmd=(
-                    "config firewall policy\n"
-                    "    delete <ID_POLITICA>\n"
-                    "end"
+                    "PASOS DE REMEDIACIÓN:\n\n"
+                    "1. A través de la CLI de FortiGate:\n"
+                    "   Elimine las políticas obsoletas que ya no se requieran:\n"
+                    "     config firewall policy\n"
+                    "         delete <ID_POLITICA>\n"
+                    "     end\n\n"
+                    "2. A través de la Interfaz Gráfica (GUI):\n"
+                    "   a. Ingrese a Policy & Objects > Firewall Policy.\n"
+                    "   b. Identifique las reglas marcadas como deshabilitadas (icono gris o desmarcardas).\n"
+                    "   c. Si la regla ya no se utiliza, haga clic derecho sobre ella y seleccione 'Delete'.\n"
+                    "   d. En caso de requerirla a futuro, vuelva a habilitarla seleccionando 'Enable'."
                 ),
             )
 

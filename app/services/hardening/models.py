@@ -24,8 +24,8 @@ from app.infrastructure.db.database import Base
 # --- ENUMS DEL DOMINIO ---
 
 class ProfileType(str, enum.Enum):
-    SYSTEM = "SYSTEM"  # Plantilla de fábrica (CIS Benchmark, Fortinet BP)
-    CUSTOM = "CUSTOM"  # Perfil clonado/modificado por el técnico
+    SYSTEM = "SYSTEM"
+    CUSTOM = "CUSTOM"
 
 
 class ExecutionType(str, enum.Enum):
@@ -36,6 +36,7 @@ class ExecutionType(str, enum.Enum):
 
 class FindingStatus(str, enum.Enum):
     PASSED = "PASSED"
+    PARCIAL = "PARCIAL"
     FAILED = "FAILED"
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
@@ -47,7 +48,7 @@ class RuleSeverity(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
-# --- TABLA INTERMEDIA (M:M Perfiles <-> Reglas) ---
+# --- TABLA INTERMEDIA ---
 
 profile_rules_association = Table(
     "hardening_profile_rules",
@@ -60,30 +61,34 @@ profile_rules_association = Table(
 # --- TABLAS PRINCIPALES ---
 
 class RuleCatalog(Base):
-    """Catálogo Maestro de Reglas de Hardening."""
-
     __tablename__ = "hardening_rule_catalog"
 
-    id = Column(String(50), primary_key=True)  # Ej: 'CIS-1.1'
+    id = Column(String(50), primary_key=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=False)
     standard = Column(String(50), nullable=False)
-    standard_version = Column(String(20), default="v1.0.0", nullable=False)  # Mapea con RuleCatalogResponse
-    default_severity = Column(Enum(RuleSeverity), default=RuleSeverity.MEDIUM, nullable=False)
+    standard_version = Column(String(20), default="v1.0.0", nullable=False)
+    default_severity = Column(
+        Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
+        default=RuleSeverity.MEDIUM,
+        nullable=False,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class HardeningProfile(Base):
-    """Perfiles / Plantillas de Evaluación."""
-
     __tablename__ = "hardening_profiles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(150), nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    profile_type = Column(Enum(ProfileType), default=ProfileType.CUSTOM, nullable=False)
+    profile_type = Column(
+        Enum(ProfileType, values_callable=lambda x: [e.value for e in x]),
+        default=ProfileType.CUSTOM,
+        nullable=False,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
@@ -94,14 +99,17 @@ class HardeningProfile(Base):
 
 
 class AuditReport(Base):
-    """Cabecera del Reporte de Auditoría de Hardening."""
-
     __tablename__ = "hardening_audit_reports"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     device_id = Column(UUID(as_uuid=True), nullable=False)
     vdom_id = Column(UUID(as_uuid=True), nullable=True)
-    execution_type = Column(Enum(ExecutionType), nullable=False)
+    
+    # Se usa values_callable para asegurar que extraiga la cadena exacta del enum ('CUSTOM_ADHOC')
+    execution_type = Column(
+        Enum(ExecutionType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     profile_id = Column(UUID(as_uuid=True), ForeignKey("hardening_profiles.id", ondelete="SET NULL"), nullable=True)
     
     score = Column(Float, nullable=False)
@@ -116,16 +124,21 @@ class AuditReport(Base):
 
 
 class AuditFinding(Base):
-    """Detalle de cada regla evaluada en un reporte específico."""
-
     __tablename__ = "hardening_audit_findings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     report_id = Column(UUID(as_uuid=True), ForeignKey("hardening_audit_reports.id", ondelete="CASCADE"), nullable=False)
     rule_id = Column(String(50), ForeignKey("hardening_rule_catalog.id"), nullable=False)
 
-    status = Column(Enum(FindingStatus), nullable=False)
-    severity = Column(Enum(RuleSeverity), nullable=False)
+    status = Column(
+        Enum(FindingStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    compliance_score = Column(Float, default=0.0, nullable=False)
+    severity = Column(
+        Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     current_value = Column(Text, nullable=True)
     expected_value = Column(Text, nullable=True)
     remediation_cmd = Column(Text, nullable=True)

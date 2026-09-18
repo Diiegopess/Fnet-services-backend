@@ -2,7 +2,8 @@
 
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from app.services.hardening.exporters import DOCXReportExporter, PDFReportExporter
 
 from app.auth.api import require_permission, get_current_user
 from app.core.rbac.context import AuthenticatedUser
@@ -11,7 +12,6 @@ from app.infrastructure.integrations.exceptions import (
     IntegrationConnectionError,
     IntegrationHTTPError,
 )
-from app.infrastructure.integrations.fortinet.fetcher import FortinetConfigFetcher
 from app.services.hardening.dependencies import (
     get_devices_api,
     get_hardening_service,
@@ -20,6 +20,7 @@ from app.services.hardening.schemas import (
     AuditExecutionRequest,
     AuditReportResponse,
     HardeningProfileResponse,
+    RuleGroupResponse,
 )
 from app.services.hardening.service import HardeningService
 
@@ -38,7 +39,6 @@ async def list_profiles(
     ),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """Obtiene la lista de perfiles de evaluación disponibles."""
     return await service.list_profiles(standard_version=fortios_version)
 
 
@@ -52,7 +52,6 @@ async def get_profile_by_id(
     profile_id: uuid.UUID,
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """Obtiene el detalle de un perfil de evaluación específico."""
     profile = await service.get_profile_by_id(profile_id)
     if not profile:
         raise HTTPException(
@@ -74,55 +73,52 @@ async def run_audit(
     service: HardeningService = Depends(get_hardening_service),
     devices_api: DevicesAPI = Depends(get_devices_api),
 ):
-    """Ejecuta una auditoría de hardening obteniendo la configuración en vivo del FortiGate."""
+    """Ejecuta una auditoría de hardening extrayendo únicamente los endpoints requeridos."""
     raw_config = getattr(payload, "raw_config", None)
+    connection_data = None
 
-    # Si el frontend no envía el CLI dump en el body, se descarga directo del equipo
-    if not raw_config or not raw_config.strip():
-        conn = await devices_api.get_connection_data(
-            device_id=payload.device_id
-        )
+    # Si no nos pasan un JSON estático, resolvemos las credenciales de conexión
+    if not raw_config:
+        conn = await devices_api.get_connection_data(device_id=payload.device_id)
         if not conn:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No se encontraron los datos de conexión para el dispositivo especificado.",
             )
 
-        try:
-            fetcher = FortinetConfigFetcher(timeout_seconds=30.0)
-            vdom_name = getattr(conn, "vdom_name", None)
+        connection_data = {
+            "host": conn.host,
+            "port": conn.port,
+            "token": conn.decrypted_token,
+            "vdom": getattr(conn, "vdom_name", None),
+        }
 
-            raw_config = await fetcher.fetch_cli_dump(
-                host=conn.host,
-                port=conn.port,
-                api_token=conn.decrypted_token,
-                vdom=vdom_name,
-            )
-        except (IntegrationHTTPError, IntegrationConnectionError) as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error al obtener la configuración desde el FortiGate: {str(e)}",
-            )
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error inesperado durante la extracción de configuración: {str(e)}",
-            )
-
-    # Extraer el ID del usuario directamente desde el token JWT
     user_id = getattr(current_user, "id", None)
 
-    # Evaluación en el motor de Hardening
-    report = await service.execute_audit(
-        device_id=payload.device_id,
-        raw_config=raw_config,
-        execution_type=payload.execution_type,
-        profile_id=payload.profile_id,
-        adhoc_rule_ids=getattr(payload, "adhoc_rule_ids", None),
-        vdom_id=getattr(payload, "vdom_id", None),
-        executed_by=user_id,
-    )
-    return report
+    try:
+        report = await service.execute_audit(
+            device_id=payload.device_id,
+            execution_type=payload.execution_type,
+            connection_data=connection_data,
+            raw_config=raw_config,
+            profile_id=payload.profile_id,
+            adhoc_rule_ids=getattr(payload, "adhoc_rule_ids", None),
+            vdom_id=getattr(payload, "vdom_id", None),
+            executed_by=user_id,
+        )
+        return report
+
+    except (IntegrationHTTPError, IntegrationConnectionError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error de comunicación con el dispositivo FortiGate: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error durante la ejecución del proceso de auditoría: {str(e)}",
+        )
+
 
 @router.get(
     "/reports",
@@ -136,8 +132,6 @@ async def list_audit_reports(
     offset: int = Query(0, ge=0),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """Obtiene la lista/historial de reportes de auditoría guardados."""
-    # Nota: Asegúrate de que tu HardeningService tenga el método list_reports o equivalente
     return await service.list_reports(device_id=device_id, limit=limit, offset=offset)
 
 
@@ -151,7 +145,6 @@ async def get_audit_report_by_id(
     report_id: uuid.UUID,
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """Obtiene el detalle completo de un reporte de auditoría por su ID."""
     report = await service.get_report_by_id(report_id)
     if not report:
         raise HTTPException(
@@ -159,3 +152,55 @@ async def get_audit_report_by_id(
             detail="Reporte de auditoría no encontrado.",
         )
     return report
+
+@router.get(
+    "/rules",
+    response_model=List[RuleGroupResponse],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission("hardening:read"))],
+)
+async def list_available_rules(
+    service: HardeningService = Depends(get_hardening_service),
+):
+    """Obtiene el catálogo maestro de reglas agrupadas para la creación de escaneos Ad-hoc."""
+    return await service.get_available_rules_catalog()
+
+
+@router.get(
+    "/reports/{report_id}/export",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission("hardening:read"))],
+)
+async def export_audit_report(
+    report_id: uuid.UUID,
+    format: str = Query("pdf", pattern="^(pdf|docx)$", description="Formato del reporte (pdf o docx)"),
+    service: HardeningService = Depends(get_hardening_service),
+):
+    """
+    Exporta un reporte de auditoría en formato PDF o DOCX.
+    """
+    report = await service.get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reporte de auditoría no encontrado.",
+        )
+
+    if format == "pdf":
+        exporter = PDFReportExporter()
+        media_type = "application/pdf"
+        filename = f"reporte_hardening_{report_id}.pdf"
+    else:
+        exporter = DOCXReportExporter()
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = f"reporte_hardening_{report_id}.docx"
+
+    file_bytes = exporter.export(report)
+
+    return Response(
+        content=file_bytes,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
+    )

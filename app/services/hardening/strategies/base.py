@@ -10,6 +10,7 @@ class RuleResult:
     """DTO que encapsula el resultado de la evaluación de una regla individual."""
 
     status: FindingStatus
+    compliance_score: Optional[float] = None  # Porcentaje de cumplimiento (0.0 a 100.0)
     current_value: Optional[str] = None
     expected_value: Optional[str] = None
     remediation_cmd: Optional[str] = None
@@ -26,14 +27,14 @@ class BaseRule(ABC):
     category: str  # Ej: 'System', 'Network', 'Admin'
     standard: str  # 'CIS', 'FORTINET', 'GAMMA'
     default_severity: RuleSeverity
-    applicable_platforms: List[str] = ["fortigate"]  # Lista de plataformas compatibles (ej. ["fortigate", "fortianalyzer"])
-    
+    applicable_platforms: List[str] = ["fortigate"]  # Lista de plataformas compatibles
+    required_endpoints: List[Dict[str, str]] = []
 
     @abstractmethod
     def evaluate(self, parsed_config: Dict[str, Any]) -> RuleResult:
         """Método principal de evaluación.
 
         :param parsed_config: Configuración del FortiGate parseada como diccionario/árbol.
-        :return: RuleResult indicando PASSED, FAILED, EXEMPT o NOT_APPLICABLE.
+        :return: RuleResult indicando PASSED, FAILED o NOT_APPLICABLE con su porcentaje de cumplimiento.
         """
         pass
