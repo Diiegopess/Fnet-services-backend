@@ -47,8 +47,15 @@ class FortiOSRawHttpClient:
     async def get_raw_text(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Obtiene la respuesta HTTP directamente como Texto Plano (ideal para dumps de config)."""
-        url = f"{self.base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
+        """Obtiene la respuesta HTTP directamente como Texto Plano evitando duplicidad de /api/v2."""
+        clean_ep = endpoint.strip("/")
+        # Si el endpoint ya trae api/v2, se concatena a la raíz del host
+        if clean_ep.startswith("api/v2/"):
+            scheme = "http" if "mock" in self.host.lower() or self.host in ("127.0.0.1", "localhost", "testserver") else "https"
+            url = f"{scheme}://{self.host}:{self.port}/{clean_ep}"
+        else:
+            url = f"{self.base_url}/{clean_ep}"
+
         ssl_verify = self._get_ssl_context()
 
         async with httpx.AsyncClient(

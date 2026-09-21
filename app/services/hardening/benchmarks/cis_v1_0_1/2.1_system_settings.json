@@ -1,0 +1,313 @@
+[
+  {
+    "id": "CIS-2.1.1",
+    "name": "Ensure Pre-Login Banner",
+    "description": "Garantiza que el banner de pre-inicio de sesión esté activo para advertir a los usuarios no autorizados sobre las restricciones de acceso antes del inicio de sesión.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "pre-login-banner",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El banner de pre-inicio de sesión debe estar activado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set pre-login-banner enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.2",
+    "name": "Ensure Post-Login Banner",
+    "description": "Garantiza que el banner posterior al inicio de sesión esté activo para notificar los términos legales y responsabilidades de uso una vez autenticado el usuario.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "post-login-banner",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El banner post-login debe estar activado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set post-login-banner enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.3",
+    "name": "Ensure Timezone Configured",
+    "description": "Verifica que la zona horaria esté explícitamente configurada en el sistema para garantizar la consistencia de marcas de tiempo en auditorías, logs y certificados.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "timezone",
+          "operator": "not_in",
+          "expected": ["", null],
+          "description": "La zona horaria debe estar definida explícitamente"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set timezone <id_zona_horaria>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.4",
+    "name": "Ensure NTP Server Configured",
+    "description": "Garantiza que la sincronización de tiempo mediante NTP esté habilitada y activa con servidores definidos.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/ntp",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El servicio de sincronización NTP debe estar habilitado"
+        },
+        {
+          "field": "ntpserver",
+          "operator": "not_in",
+          "expected": [[], null, ""],
+          "description": "Debe existir al menos un servidor NTP configurado"
+        }
+      ],
+      "remediation_cmd": "config system ntp\n  set status enable\n  config ntpserver\n    edit 1\n      set server \"<IP_o_FQDN_NTP>\"\n    next\n  end\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.5",
+    "name": "Ensure Hostname Set",
+    "description": "Garantiza que el nombre del dispositivo esté personalizado y no utilice el nombre por defecto del modelo.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "hostname",
+          "operator": "not_regex_match",
+          "expected": "^(FortiGate|FGT)",
+          "description": "El hostname no debe comenzar con los prefijos genéricos de fábrica FortiGate o FGT"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set hostname \"<Nuevo_Nombre_FW>\"\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.6",
+    "name": "Ensure FortiGuard Anycast Enabled",
+    "description": "Asegura el uso de Anycast para las comunicaciones con FortiGuard, optimizando el rendimiento y garantizando el cifrado en las consultas.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/fortiguard",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "fortiguard-anycast",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "FortiGuard Anycast debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config system fortiguard\n  set fortiguard-anycast enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.7",
+    "name": "Disable USB Auto-Install",
+    "description": "Deshabilita la instalación automática de firmware y archivos de configuración a través del puerto USB para evitar manipulaciones físicas.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/auto-install",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "auto-install-config",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La auto-instalación de configuración desde USB debe estar desactivada"
+        },
+        {
+          "field": "auto-install-image",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La auto-instalación de firmware desde USB debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system auto-install\n  set auto-install-config disable\n  set auto-install-image disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.8",
+    "name": "Disable TLS Static Keys",
+    "description": "Deshabilita el soporte de cifrados con claves estáticas en sesiones TLS para garantizar Perfect Forward Secrecy (PFS).",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "ssl-static-key-ciphers",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "Cifrados de clave estática SSL/TLS deben estar desactivados"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set ssl-static-key-ciphers disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.9",
+    "name": "Enable Global Strong Encryption",
+    "description": "Fuerza el uso exclusivo de algoritmos de cifrado fuertes en todo el sistema.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "strong-crypto",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El parámetro strong-crypto debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set strong-crypto enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.10",
+    "name": "Enforce TLS 1.3 on Admin GUI",
+    "description": "Garantiza que el acceso a la interfaz web administrativa requiera TLS 1.3 para proteger la sesión contra ataques de degradación de cifrado.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-https-ssl-versions",
+          "operator": "equals",
+          "expected": "tlsv1-3",
+          "description": "La versión TLS permitida en el portal HTTPS debe ser exclusivamente TLS 1.3"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-https-ssl-versions tlsv1-3\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.11",
+    "name": "Ensure Central Management Configured",
+    "description": "Verifica que el dispositivo esté integrado con una plataforma de gestión centralizada (como FortiManager).",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/central-management",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "type",
+          "operator": "in",
+          "expected": ["fortimanager", "fortiguard"],
+          "description": "El tipo de gestión centralizada debe ser fortimanager o fortiguard"
+        }
+      ],
+      "remediation_cmd": "config system central-management\n  set type fortimanager\n  set fmg \"<IP_o_FQDN_FortiManager>\"\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.12",
+    "name": "Log Single CPU Core Overload",
+    "description": "Habilita el registro de eventos cuando un único núcleo del CPU supere el umbral de carga.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "log-single-cpu-high",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "La alerta de saturación por núcleo individual de CPU debe estar habilitada"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set log-single-cpu-high enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.13",
+    "name": "Hide Hostname on Login GUI",
+    "description": "Oculta el nombre del dispositivo en la pantalla de inicio de sesión de la GUI para evitar revelar información en tareas de reconocimiento.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "gui-display-hostname",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La visualización del hostname en la pantalla de autenticación debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set gui-display-hostname disable\nend"
+    }
+  }
+]

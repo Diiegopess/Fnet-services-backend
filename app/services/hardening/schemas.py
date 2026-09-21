@@ -18,13 +18,15 @@ from app.services.hardening.models import (
 
 class RuleCatalogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: str
+    standard_version: str = "v1.0.0"
     name: str
     description: Optional[str] = None
     category: str
     standard: str
     default_severity: RuleSeverity
+    required_endpoint: str
     is_active: bool = True
 
 
@@ -56,9 +58,13 @@ class AuditExecutionRequest(BaseModel):
     execution_type: ExecutionType
     profile_id: Optional[UUID] = None
     adhoc_rule_ids: Optional[List[str]] = None
+    standard_version: Optional[str] = Field("v1.0.0", description="Versión del benchmark a evaluar.")
     vdom_id: Optional[UUID] = None
+    connection_data: Optional[Dict[str, Any]] = Field(
+        None, description="Parámetros host/port/token si se extrae en caliente."
+    )
     raw_config: Optional[Any] = Field(
-        None, description="Configuración estática para pruebas."
+        None, description="Configuración estática/mock para pruebas."
     )
 
     @model_validator(mode="after")
@@ -77,16 +83,11 @@ class FindingResponse(BaseModel):
 
     id: UUID
     rule_id: str
+    standard_version: str = "v1.0.0"
     status: FindingStatus
     compliance_score: float = Field(0.0, description="Porcentaje de cumplimiento de la regla (0.0 a 100.0).")
     severity: RuleSeverity
     current_value: Optional[str] = None
-    raw_evidence: Optional[str] = Field(
-        None, description="Línea o bloque exacto de la configuración analizado."
-    )
-    reason: Optional[str] = Field(
-        None, description="Justificación técnica de la evaluación de la regla."
-    )
     expected_value: Optional[str] = None
     remediation_cmd: Optional[str] = None
 

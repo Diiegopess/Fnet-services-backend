@@ -7,19 +7,15 @@ from app.services.hardening.engine.evaluator import HardeningEvaluator
 from app.services.hardening.exceptions import InvalidExecutionPayloadException
 from app.services.hardening.models import AuditReport, ExecutionType, HardeningProfile
 from app.services.hardening.repository import HardeningRepository
-from app.services.hardening.strategies.base import BaseRule
-from app.services.hardening.strategies.registry import RuleRegistry
-
-import app.services.hardening.strategies  # Carga y registra las reglas automáticamente
 
 
 class HardeningService:
-    """Servicio principal de orquestación de Hardening (Evaluación por perfil/extracción quirúrgica)."""
+    """Servicio principal de orquestación de Hardening declarativo."""
 
     def __init__(self, repository: HardeningRepository, fetcher=None):
         self.repository = repository
         self.evaluator = HardeningEvaluator()
-        self.fetcher = fetcher  # Inyección del FortinetConfigFetcher
+        self.fetcher = fetcher
 
     # --- CONSULTAS DE PERFILES ---
 
@@ -50,7 +46,7 @@ class HardeningService:
         """Obtiene el detalle de un reporte de auditoría por su UUID."""
         return await self.repository.get_report_by_id(report_id)
 
-    # --- EJECUCIÓN DE AUDITORÍA ---
+    # --- EJECUCIÓN DE AUDITORÍA DECLARATIVA ---
 
     async def execute_audit(
         self,
@@ -60,10 +56,11 @@ class HardeningService:
         raw_config: Optional[Dict[str, Any]] = None,
         profile_id: Optional[UUID] = None,
         adhoc_rule_ids: Optional[List[str]] = None,
+        standard_version: Optional[str] = None,
         vdom_id: Optional[UUID] = None,
         executed_by: Optional[UUID] = None,
     ) -> AuditReport:
-        """Orquesta la auditoría extrayendo únicamente los endpoints que el perfil exige."""
+        """Orquesta la auditoría declarativa cargando reglas y aislando endpoints."""
 
         # 1. Determinar los IDs de reglas a ejecutar
         target_rule_ids: List[str] = []
@@ -87,21 +84,17 @@ class HardeningService:
                 "No se encontraron reglas configuradas para ejecutar en esta solicitud."
             )
 
-        # 2. Instanciar las reglas registradas a evaluar
-        unregistered_rule_ids = [
-            rule_id for rule_id in target_rule_ids if not RuleRegistry.is_registered(rule_id)
-        ]
-        if unregistered_rule_ids:
+        # 2. Cargar las reglas directamente desde la BD
+        rules_to_run = await self.repository.get_rules_by_ids(
+            rule_ids=target_rule_ids, standard_version=standard_version
+        )
+
+        if not rules_to_run:
             raise InvalidExecutionPayloadException(
-                "Las siguientes reglas no están registradas en el motor: "
-                + ", ".join(unregistered_rule_ids)
+                "Ninguna de las reglas solicitadas existe o está activa en la base de datos."
             )
 
-        rules_to_run: List[BaseRule] = [
-            RuleRegistry.get_rule(r_id) for r_id in target_rule_ids
-        ]
-
-        # 3. EXTRACCIÓN QUIRÚRGICA: Compilar endpoints directamente desde las reglas
+        # 3. EXTRACCIÓN DINÁMICA: Extraer endpoints desde las reglas cargadas
         parsed_config: Dict[str, Any] = raw_config or {}
 
         if not parsed_config:
@@ -114,14 +107,13 @@ class HardeningService:
                     "Se requieren los datos de conexión ('connection_data') para consultar el dispositivo."
                 )
 
-            # Resolver y deduplicar endpoints requeridos por las reglas a evaluar
+            # Deduplicar endpoints directamente de las entidades SQL cargadas
             required_endpoints = list({
                 rule.required_endpoint
                 for rule in rules_to_run
-                if getattr(rule, "required_endpoint", None)
+                if rule.required_endpoint
             })
 
-            # Extracción desde la infraestructura
             parsed_config = await self.fetcher.fetch_endpoints_data(
                 host=connection_data["host"],
                 port=connection_data["port"],
@@ -135,13 +127,13 @@ class HardeningService:
                 "No se obtuvo información de configuración para evaluar el dispositivo."
             )
 
-        # 4. Ejecutar la evaluación del perfil (Calcula los % por regla y el % global)
+        # 4. Evaluación declarativa
         summary = self.evaluator.evaluate_rules(
             rules=rules_to_run,
             parsed_config=parsed_config,
         )
 
-        # 5. Persistir el reporte en BD incluyendo compliance_score de cada hallazgo
+        # 5. Persistir reporte en BD
         report = await self.repository.save_audit_report(
             device_id=device_id,
             vdom_id=vdom_id,
@@ -151,38 +143,40 @@ class HardeningService:
             total_passed=summary.total_passed,
             total_failed=summary.total_failed,
             total_not_applicable=summary.total_not_applicable,
-            findings_data=summary.findings,  # Cada dict dentro de list contiene "compliance_score"
+            findings_data=summary.findings,
             executed_by=executed_by,
         )
 
         return report
 
-    async def get_available_rules_catalog(self) -> List[Dict[str, Any]]:
-        """Devuelve todas las reglas registradas en el sistema agrupadas por estándar/categoría."""
-        registered_rules = RuleRegistry.get_all_rules()
+    async def get_available_rules_catalog(
+        self, standard: Optional[str] = None, standard_version: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Devuelve el catálogo de reglas agrupado por categoría para el Frontend."""
+        rules = await self.repository.get_all_active_rules(
+            standard=standard, standard_version=standard_version
+        )
 
         grouped: Dict[str, List[Dict[str, Any]]] = {}
 
-        for rule in registered_rules:
-            # Extraer estándar o categoría de la regla
-            category = getattr(rule, "standard", getattr(rule, "category", "OTROS")).upper()
-
-            rule_data = {
-                "id": rule.rule_id,
-                "name": getattr(rule, "name", rule.rule_id),
-                "description": getattr(rule, "description", None),
-                "category": category,
-                "standard": getattr(rule, "standard", category),
-                "default_severity": getattr(rule, "default_severity", "MEDIUM"),
-                "is_active": True,
+        for rule in rules:
+            cat = rule.category.upper() if rule.category else "GENERAL"
+            item = {
+                "id": rule.id,
+                "standard_version": rule.standard_version,
+                "name": rule.name,
+                "description": rule.description,
+                "category": cat,
+                "standard": rule.standard,
+                "default_severity": rule.default_severity.value if hasattr(rule.default_severity, "value") else str(rule.default_severity),
+                "required_endpoint": rule.required_endpoint,
+                "is_active": rule.is_active,
             }
+            if cat not in grouped:
+                grouped[cat] = []
+            grouped[cat].append(item)
 
-            if category not in grouped:
-                grouped[category] = []
-            grouped[category].append(rule_data)
-
-        # Retornar estructura en formato de lista de grupos para el frontend
         return [
-            {"category": cat_name, "count": len(rules_list), "rules": rules_list}
-            for cat_name, rules_list in grouped.items()
+            {"category": cat_name, "count": len(items), "rules": items}
+            for cat_name, items in grouped.items()
         ]

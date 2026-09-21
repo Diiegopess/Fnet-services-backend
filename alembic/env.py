@@ -24,7 +24,7 @@ from app.clients.models import Client, client_technicians  # noqa: F401
 from app.devices.models import FortigateDevice  # noqa: F401
 from app.services.hardening.models import HardeningProfile  # noqa: F401
 from app.users.models import User  # noqa: F401
-
+from app.vdoms.models import *  # noqa: F401, F403  
 # Objeto de configuración de Alembic
 config = context.config
 

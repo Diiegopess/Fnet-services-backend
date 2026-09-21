@@ -1,0 +1,84 @@
+[
+  {
+    "id": "CIS-6.1.1",
+    "name": "Ensure HA Cluster Password Protection",
+    "description": "Garantiza que la sincronización en clúster (High Availability) esté protegida con una contraseña robusta para evitar la integración no autorizada de nodos.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/ha",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "any_of": [
+        {
+          "field": "mode",
+          "operator": "equals",
+          "expected": "standalone",
+          "description": "El dispositivo opera como nodo independiente (standalone)"
+        },
+        {
+          "field": "password",
+          "operator": "not_in",
+          "expected": ["", null],
+          "description": "El clúster HA cuenta con una contraseña de autenticación configurada"
+        }
+      ],
+      "remediation_cmd": "config system ha\n  set password <CONTRASEÑA_ROBUSTA_HA>\nend"
+    }
+  },
+  {
+    "id": "CIS-6.2.1",
+    "name": "Enforce Minimum TLS 1.2 on SSL-VPN",
+    "description": "Asegura que el servicio SSL-VPN rechace conexiones con versiones obsoletas de TLS (TLS 1.0 y TLS 1.1) para proteger la transmisión de credenciales y datos.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/vpn.ssl/settings",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "any_of": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El servicio de SSL-VPN se encuentra deshabilitado"
+        },
+        {
+          "field": "ssl-min-proto-version",
+          "operator": "not_in",
+          "expected": ["tls1.0", "tls1.1", "default", ""],
+          "description": "La versión mínima de TLS en SSL-VPN debe ser TLS 1.2 o superior"
+        }
+      ],
+      "remediation_cmd": "config vpn ssl settings\n  set ssl-min-proto-version tls1.2\nend"
+    }
+  },
+  {
+    "id": "CIS-6.2.2",
+    "name": "Disable Weak Ciphers in IPsec Phase 1",
+    "description": "Verifica que las fases 1 de las VPN IPsec deshabiliten cifrados o firmas vulnerables como DES, 3DES o algoritmos de hashing tipo MD5.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/vpn.ipsec/phase1-interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "proposal",
+          "operator": "disjoint_tokens",
+          "forbidden": ["des", "3des", "md5"],
+          "description": "Las propuestas de cifrado en la Fase 1 no deben incluir DES, 3DES ni MD5"
+        }
+      ],
+      "remediation_cmd": "config vpn ipsec phase1-interface\n  edit \"<nombre_tunel>\"\n    set proposal aes256-sha256 aes128-sha256\n  next\nend"
+    }
+  }
+]

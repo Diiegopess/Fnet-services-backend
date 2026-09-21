@@ -1,3 +1,5 @@
+# app/services/hardening/repository.py
+
 from typing import List, Optional, Sequence
 from uuid import UUID
 
@@ -16,16 +18,22 @@ from app.services.hardening.models import (
 
 
 class HardeningRepository:
-    """Capa de persistencia para el módulo de Hardening."""
+    """Capa de persistencia desacoplada para el módulo de Hardening."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    # --- Sincronización de Catálogo ---
+    # --- Sincronización de Catálogo Híbrido (JSONB) ---
     async def sync_rule_catalog(self, rules_data: List[dict]) -> None:
-        """Sincroniza el catálogo maestro en BD con las reglas registradas en Python."""
+        """Sincroniza el catálogo maestro en BD a partir de especificaciones JSON."""
         for data in rules_data:
-            stmt = select(RuleCatalog).where(RuleCatalog.id == data["id"])
+            version = data.get("standard_version", "v1.0.0")
+            
+            # Búsqueda por clave compuesta: ID + Versión
+            stmt = select(RuleCatalog).where(
+                RuleCatalog.id == data["id"],
+                RuleCatalog.standard_version == version,
+            )
             result = await self.session.execute(stmt)
             existing = result.scalar_one_or_none()
 
@@ -34,21 +42,54 @@ class HardeningRepository:
                 existing.description = data.get("description")
                 existing.category = data["category"]
                 existing.standard = data["standard"]
-                existing.standard_version = data.get("standard_version", "v1.0.0")
                 existing.default_severity = data["default_severity"]
+                existing.required_endpoint = data["required_endpoint"]
+                existing.rule_spec = data["rule_spec"]
+                existing.is_active = data.get("is_active", True)
             else:
                 new_rule = RuleCatalog(
                     id=data["id"],
+                    standard_version=version,
                     name=data["name"],
                     description=data.get("description"),
                     category=data["category"],
                     standard=data["standard"],
-                    standard_version=data.get("standard_version", "v1.0.0"),
                     default_severity=data["default_severity"],
+                    required_endpoint=data["required_endpoint"],
+                    rule_spec=data["rule_spec"],
+                    is_active=data.get("is_active", True),
                 )
                 self.session.add(new_rule)
 
         await self.session.commit()
+
+    # --- Consultas de Reglas para el Motor Declarativo ---
+    async def get_rules_by_ids(
+        self, rule_ids: List[str], standard_version: Optional[str] = None
+    ) -> Sequence[RuleCatalog]:
+        """Obtiene las especificaciones de reglas activas filtradas por ID y versión."""
+        stmt = select(RuleCatalog).where(
+            RuleCatalog.id.in_(rule_ids),
+            RuleCatalog.is_active.is_(True),
+        )
+        if standard_version:
+            stmt = stmt.where(RuleCatalog.standard_version == standard_version)
+
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_all_active_rules(
+        self, standard: Optional[str] = None, standard_version: Optional[str] = None
+    ) -> Sequence[RuleCatalog]:
+        """Obtiene todo el catálogo maestro para auditorías de estándar completo."""
+        stmt = select(RuleCatalog).where(RuleCatalog.is_active.is_(True))
+        if standard:
+            stmt = stmt.where(RuleCatalog.standard == standard)
+        if standard_version:
+            stmt = stmt.where(RuleCatalog.standard_version == standard_version)
+
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
     # --- Consultas de Perfiles ---
     async def get_all_profiles(
@@ -120,7 +161,9 @@ class HardeningRepository:
             finding = AuditFinding(
                 report_id=report.id,
                 rule_id=f_data["rule_id"],
+                standard_version=f_data.get("standard_version", "v1.0.0"),
                 status=f_data["status"],
+                compliance_score=f_data.get("compliance_score", 0.0),
                 severity=f_data["severity"],
                 current_value=f_data.get("current_value"),
                 expected_value=f_data.get("expected_value"),
@@ -129,8 +172,7 @@ class HardeningRepository:
             self.session.add(finding)
 
         await self.session.commit()
-        
-        # Volvemos a cargar el reporte junto con sus hallazgos para que Pydantic lo serialice sin problemas
+
         stmt = (
             select(AuditReport)
             .options(selectinload(AuditReport.findings))

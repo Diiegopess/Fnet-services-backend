@@ -1,0 +1,201 @@
+[
+  {
+    "id": "CIS-2.3.1",
+    "name": "Disable CDP on Interfaces",
+    "description": "Deshabilita el protocolo Cisco Discovery Protocol (CDP) en todas las interfaces para evitar la divulgación innecesaria de información de red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "cdp",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El parámetro cdp debe estar en disable en todas las interfaces"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    set cdp disable\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.2",
+    "name": "Disable LLDP on Interfaces",
+    "description": "Deshabilita la transmisión y recepción del protocolo LLDP en las interfaces para reducir el reconocimiento de topología de red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "lldp-transmission",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La transmisión LLDP debe estar desactivada"
+        },
+        {
+          "field": "lldp-reception",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La recepción LLDP debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    set lldp-transmission disable\n    set lldp-reception disable\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.3",
+    "name": "Disable Ping on External Interfaces",
+    "description": "Deshabilita la respuesta a PING (ICMP Echo Request) en interfaces externas o WAN para prevenir el mapeo activo de la red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "filter": {
+        "field": "role",
+        "operator": "equals",
+        "value": "wan"
+      },
+      "checks": [
+        {
+          "field": "allowaccess",
+          "operator": "disjoint_tokens",
+          "forbidden": ["ping"],
+          "description": "El servicio ping debe estar ausente en allowaccess de interfaces WAN"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<interfaz_wan>\"\n    unselect allowaccess ping\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.4",
+    "name": "Disable Ident Service",
+    "description": "Garantiza que el servicio de identificación (puerto TCP 113) esté deshabilitado para evitar la fuga de nombres de usuarios y procesos.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "ident-accept",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El parámetro ident-accept debe estar configurado en disable"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set ident-accept disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.5",
+    "name": "Secure System DNS Settings",
+    "description": "Verifica que la resolución de nombres DNS esté configurada utilizando servidores confiables y válidos.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/dns",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "primary",
+          "operator": "not_in",
+          "expected": ["", null, "0.0.0.0"],
+          "description": "Debe haber una dirección IP de DNS primario corporativa o de confianza configurada"
+        }
+      ],
+      "remediation_cmd": "config system dns\n  set primary <IP_DNS_Primario>\n  set secondary <IP_DNS_Secundario>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.6",
+    "name": "Disable SIP/H.323 Session Helpers",
+    "description": "Deshabilita los asistentes de sesión (ALG) para SIP y H.323 si no son requeridos para reducir la superficie de ataque.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/session-helper",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "name",
+          "operator": "not_in",
+          "expected": ["sip", "h323"],
+          "description": "No deben existir session-helpers activos para protocolos SIP o H.323"
+        }
+      ],
+      "remediation_cmd": "config system session-helper\n  # Consultar con 'show' los IDs de sip y h323 y eliminarlos:\n  delete <ID_HELPER>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.7",
+    "name": "Ensure Secure SNMP Configuration",
+    "description": "Exige que el agente SNMP esté deshabilitado si no se utiliza con cifrado.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system.snmp/sysinfo",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El agente general SNMP debe estar deshabilitado salvo que se use SNMPv3 exclusivo"
+        }
+      ],
+      "remediation_cmd": "config system snmp sysinfo\n  set status disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.8",
+    "name": "Encrypt FortiManager Connection",
+    "description": "Garantiza que la comunicación con FortiManager utilice cifrado alto.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/central-management",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "enc-algorithm",
+          "operator": "equals",
+          "expected": "high",
+          "description": "El algoritmo de cifrado para la gestión centralizada debe estar en high"
+        }
+      ],
+      "remediation_cmd": "config system central-management\n  set enc-algorithm high\nend"
+    }
+  }
+]

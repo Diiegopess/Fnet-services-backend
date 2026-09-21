@@ -1,3 +1,5 @@
+# app/services/hardening/models.py
+
 import enum
 import uuid
 from datetime import datetime
@@ -10,12 +12,13 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     Table,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.infrastructure.db.database import Base
@@ -48,33 +51,55 @@ class RuleSeverity(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
-# --- TABLA INTERMEDIA ---
+# --- TABLA INTERMEDIA (PERFILES <-> REGLAS VERSIONADAS) ---
 
 profile_rules_association = Table(
     "hardening_profile_rules",
     Base.metadata,
-    Column("profile_id", UUID(as_uuid=True), ForeignKey("hardening_profiles.id", ondelete="CASCADE"), primary_key=True),
-    Column("rule_id", String(50), ForeignKey("hardening_rule_catalog.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "profile_id",
+        UUID(as_uuid=True),
+        ForeignKey("hardening_profiles.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("rule_id", String(50), primary_key=True),
+    Column("standard_version", String(20), primary_key=True),
+    ForeignKeyConstraint(
+        ["rule_id", "standard_version"],
+        ["hardening_rule_catalog.id", "hardening_rule_catalog.standard_version"],
+        ondelete="CASCADE",
+    ),
 )
 
 
 # --- TABLAS PRINCIPALES ---
 
 class RuleCatalog(Base):
+    """Catálogo maestro de reglas desacopladas almacenadas como especificación JSONB."""
+
     __tablename__ = "hardening_rule_catalog"
 
+    # Clave primaria compuesta para permitir soporte multi-versión
     id = Column(String(50), primary_key=True)
+    standard_version = Column(String(20), primary_key=True, default="v1.0.0")
+
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=False)
-    standard = Column(String(50), nullable=False)
-    standard_version = Column(String(20), default="v1.0.0", nullable=False)
+    standard = Column(String(50), nullable=False)  # Ej: 'CIS', 'FORTINET'
     default_severity = Column(
         Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
         default=RuleSeverity.MEDIUM,
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Endpoint exacto que requiere el fetcher para el dump
+    required_endpoint = Column(String(255), nullable=False)
+
+    # Especificación técnica declarativa completa (checks, operators, expected, remediation)
+    rule_spec = Column(JSONB, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -84,6 +109,7 @@ class HardeningProfile(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(150), nullable=False, unique=True)
     description = Column(Text, nullable=True)
+    standard_version = Column(String(20), default="v1.0.1", nullable=False) 
     profile_type = Column(
         Enum(ProfileType, values_callable=lambda x: [e.value for e in x]),
         default=ProfileType.CUSTOM,
@@ -93,9 +119,13 @@ class HardeningProfile(Base):
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
-    rules = relationship("RuleCatalog", secondary=profile_rules_association, backref="profiles")
+    rules = relationship(
+        "RuleCatalog", secondary=profile_rules_association, backref="profiles"
+    )
 
 
 class AuditReport(Base):
@@ -104,14 +134,17 @@ class AuditReport(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     device_id = Column(UUID(as_uuid=True), nullable=False)
     vdom_id = Column(UUID(as_uuid=True), nullable=True)
-    
-    # Se usa values_callable para asegurar que extraiga la cadena exacta del enum ('CUSTOM_ADHOC')
+
     execution_type = Column(
         Enum(ExecutionType, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
-    profile_id = Column(UUID(as_uuid=True), ForeignKey("hardening_profiles.id", ondelete="SET NULL"), nullable=True)
-    
+    profile_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("hardening_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     score = Column(Float, nullable=False)
     total_passed = Column(Integer, default=0, nullable=False)
     total_failed = Column(Integer, default=0, nullable=False)
@@ -120,15 +153,22 @@ class AuditReport(Base):
     executed_by = Column(UUID(as_uuid=True), nullable=True)
     executed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    findings = relationship("AuditFinding", back_populates="report", cascade="all, delete-orphan")
+    findings = relationship(
+        "AuditFinding", back_populates="report", cascade="all, delete-orphan"
+    )
 
 
 class AuditFinding(Base):
     __tablename__ = "hardening_audit_findings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    report_id = Column(UUID(as_uuid=True), ForeignKey("hardening_audit_reports.id", ondelete="CASCADE"), nullable=False)
-    rule_id = Column(String(50), ForeignKey("hardening_rule_catalog.id"), nullable=False)
+    report_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("hardening_audit_reports.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rule_id = Column(String(50), nullable=False)
+    standard_version = Column(String(20), default="v1.0.0", nullable=False)
 
     status = Column(
         Enum(FindingStatus, values_callable=lambda x: [e.value for e in x]),

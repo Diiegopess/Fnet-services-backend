@@ -1,0 +1,175 @@
+[
+  {
+    "id": "CIS-5.1.1",
+    "name": "Encrypt FortiAnalyzer/FortiManager Logging",
+    "description": "Garantiza que el envío de logs hacia FortiAnalyzer o FortiManager utilice cifrado (SSL/TLS) para proteger la confidencialidad de los eventos.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/log.fortianalyzer/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "enc-algorithm",
+          "operator": "not_equals",
+          "expected": "disable",
+          "description": "El algoritmo de cifrado en el envío de logs hacia FortiAnalyzer no debe estar en disable"
+        }
+      ],
+      "remediation_cmd": "config log fortianalyzer setting\n  set enc-algorithm high\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.2",
+    "name": "Ensure Remote Syslog Logging Configured",
+    "description": "Verifica que el dispositivo envíe sus registros a un servidor Syslog remoto/SIEM centralizado para almacenamiento persistente.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/log.syslogd/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El servicio de Syslog remoto debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config log syslogd setting\n  set status enable\n  set server \"<IP_Servidor_Syslog>\"\n  set mode reliable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.3",
+    "name": "Enable Event Logging for System Activity",
+    "description": "Asegura que el registro de eventos del sistema y autenticación administrativa esté totalmente activo.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/log/eventfilter",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "event",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro general de eventos debe estar en enable"
+        },
+        {
+          "field": "system",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro de eventos de sistema debe estar en enable"
+        },
+        {
+          "field": "admin",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro de eventos de administración debe estar en enable"
+        }
+      ],
+      "remediation_cmd": "config log eventfilter\n  set event enable\n  set system enable\n  set admin enable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.4",
+    "name": "Ensure Disk Full Log Strategy",
+    "description": "Configura la acción cuando el almacenamiento local de disco se llena para evitar que el registro se detenga.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/log.disk/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "action",
+          "operator": "equals",
+          "expected": "overwrite",
+          "description": "La acción ante disco local lleno debe ser overwrite en lugar de nolog"
+        }
+      ],
+      "remediation_cmd": "config log disk setting\n  set action overwrite\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.5",
+    "name": "Ensure Log Threat Weight Active",
+    "description": "Garantiza que la ponderación de amenazas (Threat Weight) esté configurada para priorizar riesgos en la red.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/log/threat-weight",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El cálculo de Threat Weight debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config log threat-weight\n  set status enable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.6",
+    "name": "Disable RAM Memory Logging",
+    "description": "Deshabilita el almacenamiento de logs en memoria RAM para evitar consumo innecesario de recursos volátiles.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/log.memory/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El almacenamiento de logs en memoria RAM debe estar deshabilitado"
+        }
+      ],
+      "remediation_cmd": "config log memory setting\n  set status disable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.7",
+    "name": "Ensure Alert Email Notifications",
+    "description": "Verifica que el envío de alertas por correo electrónico ante eventos críticos esté configurado con un destinatario válido.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/alertemail/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "mailto1",
+          "operator": "not_in",
+          "expected": ["", null],
+          "description": "Debe existir al menos un correo de destino configurado en mailto1"
+        }
+      ],
+      "remediation_cmd": "config alertemail setting\n  set mailto1 \"<correo_admin_o_soc>\"\n  set email-interval 5\nend"
+    }
+  }
+]

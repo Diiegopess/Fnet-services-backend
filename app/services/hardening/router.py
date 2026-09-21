@@ -34,12 +34,12 @@ router = APIRouter(prefix="/hardening", tags=["Hardening"])
     dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def list_profiles(
-    fortios_version: Optional[str] = Query(
-        None, description="Filtrar por versión de FortiOS"
+    standard_version: Optional[str] = Query(
+        None, description="Filtrar por versión de estándar (ej. v1.0.0)"
     ),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    return await service.list_profiles(standard_version=fortios_version)
+    return await service.list_profiles(standard_version=standard_version)
 
 
 @router.get(
@@ -73,11 +73,10 @@ async def run_audit(
     service: HardeningService = Depends(get_hardening_service),
     devices_api: DevicesAPI = Depends(get_devices_api),
 ):
-    """Ejecuta una auditoría de hardening extrayendo únicamente los endpoints requeridos."""
+    """Ejecuta una auditoría de hardening declarativa aislando los endpoints requeridos."""
     raw_config = getattr(payload, "raw_config", None)
     connection_data = None
 
-    # Si no nos pasan un JSON estático, resolvemos las credenciales de conexión
     if not raw_config:
         conn = await devices_api.get_connection_data(device_id=payload.device_id)
         if not conn:
@@ -103,6 +102,7 @@ async def run_audit(
             raw_config=raw_config,
             profile_id=payload.profile_id,
             adhoc_rule_ids=getattr(payload, "adhoc_rule_ids", None),
+            standard_version=payload.standard_version,  # <-- Pasa la versión declarada al servicio
             vdom_id=getattr(payload, "vdom_id", None),
             executed_by=user_id,
         )
@@ -160,10 +160,12 @@ async def get_audit_report_by_id(
     dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def list_available_rules(
+    standard: Optional[str] = Query(None, description="Filtrar por estándar (ej. CIS)"),
+    standard_version: Optional[str] = Query(None, description="Filtrar por versión (ej. v1.0.0)"),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """Obtiene el catálogo maestro de reglas agrupadas para la creación de escaneos Ad-hoc."""
-    return await service.get_available_rules_catalog()
+    """Obtiene el catálogo maestro de reglas agrupadas para escaneos Ad-hoc desde la base de datos."""
+    return await service.get_available_rules_catalog(standard=standard, standard_version=standard_version)
 
 
 @router.get(

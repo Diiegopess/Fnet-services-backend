@@ -1,0 +1,78 @@
+[
+  {
+    "id": "CIS-1.1",
+    "name": "Ensure DNS Server Configured",
+    "description": "Garantiza que el firewall tenga configurados servidores DNS corporativos o de confianza para evitar MitM.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/dns",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "primary",
+          "operator": "not_in",
+          "expected": ["", null, "96.45.45.45", "96.45.46.46"],
+          "description": "El DNS primario debe estar configurado y no usar las IPs por defecto de Fortinet"
+        }
+      ],
+      "remediation_cmd": "config system dns\n  set primary <ip_dns_primario>\n  set secondary <ip_dns_secundario>\nend"
+    }
+  },
+  {
+    "id": "CIS-1.2",
+    "name": "Block Intra-Zone Traffic",
+    "description": "Garantiza que el tráfico entre interfaces de la misma zona esté bloqueado por defecto para evitar desplazamiento lateral.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/zone",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "intrazone",
+          "operator": "equals",
+          "expected": "deny",
+          "description": "Todas las zonas deben tener el parámetro intrazone en deny"
+        }
+      ],
+      "remediation_cmd": "config system zone\n  edit \"<nombre_zona>\"\n    set intrazone deny\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-1.3",
+    "name": "Disable Management Services on WAN",
+    "description": "Garantiza que los servicios de gestión administrativa estén deshabilitados en interfaces WAN.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "filter": {
+        "field": "role",
+        "operator": "equals",
+        "value": "wan"
+      },
+      "checks": [
+        {
+          "field": "allowaccess",
+          "operator": "disjoint_tokens",
+          "forbidden": ["https", "http", "ping", "ssh", "snmp", "radius-acct"],
+          "description": "Interfaces WAN sin servicios administrativos expuestos"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    unselect allowaccess <servicios>\n  next\nend"
+    }
+  }
+]

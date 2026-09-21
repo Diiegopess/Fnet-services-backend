@@ -1,10 +1,11 @@
 # app/services/hardening/engine/evaluator.py
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence, Union
 
-from app.services.hardening.models import FindingStatus
-from app.services.hardening.strategies.base import BaseRule, RuleResult
+from app.services.hardening.engine.declarative import DeclarativeRuleEngine
+from app.services.hardening.models import FindingStatus, RuleCatalog, RuleSeverity
+from app.services.hardening.strategies.base import RuleResult
 
 
 @dataclass
@@ -19,13 +20,15 @@ class EvaluationSummary:
 
 
 class HardeningEvaluator:
-    """Orquestador de evaluación que aplica N reglas sobre respuestas JSON/CMDB de FortiOS."""
+    """Orquestador de evaluación desacoplado que procesa especificaciones JSON de BD."""
+
+    def __init__(self):
+        self.declarative_engine = DeclarativeRuleEngine()
 
     def evaluate_rules(
         self,
-        rules: List[BaseRule],
+        rules: Sequence[Union[RuleCatalog, Dict[str, Any]]],
         parsed_config: Dict[str, Any],
-        target_platform: str = "fortigate",
     ) -> EvaluationSummary:
 
         passed = 0
@@ -38,31 +41,42 @@ class HardeningEvaluator:
         findings: List[Dict[str, Any]] = []
 
         for rule in rules:
-            # 1. Validar aplicabilidad por plataforma del dispositivo
-            if target_platform not in rule.applicable_platforms:
-                not_applicable += 1
-                findings.append({
-                    "rule_id": rule.rule_id,
-                    "status": FindingStatus.NOT_APPLICABLE,
-                    "compliance_score": 0.0,
-                    "severity": rule.default_severity,
-                    "current_value": f"No aplicable a la plataforma '{target_platform}'",
-                    "expected_value": None,
-                    "remediation_cmd": None,
-                })
-                continue
+            # 1. Normalizar metadatos de la regla (sea instancia SQLAlchemy o diccionario)
+            if isinstance(rule, dict):
+                rule_id = rule["id"]
+                rule_version = rule.get("standard_version", "v1.0.0")
+                rule_severity = rule.get("default_severity", RuleSeverity.MEDIUM)
+                rule_spec = rule.get("rule_spec", {})
+                required_endpoint = rule.get("required_endpoint", "")
+            else:
+                rule_id = rule.id
+                rule_version = rule.standard_version
+                rule_severity = rule.default_severity
+                rule_spec = rule.rule_spec or {}
+                required_endpoint = rule.required_endpoint
 
-            # 2. Ejecutar la evaluación de la regla
+            rule_meta = {
+                "id": rule_id,
+                "standard_version": rule_version,
+                "severity": rule_severity,
+                "required_endpoint": required_endpoint,
+            }
+
+            # 2. Ejecutar evaluación declarativa aislando su endpoint
             try:
-                result: RuleResult = rule.evaluate(parsed_config)
+                result: RuleResult = self.declarative_engine.evaluate_rule(
+                    rule_meta=rule_meta,
+                    rule_spec=rule_spec,
+                    raw_dump=parsed_config,
+                )
             except Exception as e:
                 result = RuleResult(
                     status=FindingStatus.FAILED,
                     compliance_score=0.0,
-                    current_value=f"Error en motor de evaluación: {str(e)}",
+                    current_value=f"Error en ejecución declarativa: {str(e)}",
+                    expected_value="Evaluación sin errores",
                 )
 
-            # 3. Determinar el porcentaje de cumplimiento de la regla
             rule_score = result.compliance_score
             if rule_score is None:
                 if result.status == FindingStatus.PASSED:
@@ -72,16 +86,18 @@ class HardeningEvaluator:
                 else:
                     rule_score = 0.0
 
-            # Normalizar el valor dentro del rango 0 - 100
             rule_score = max(0.0, min(100.0, float(rule_score)))
-
-            # Clasificar status visual si la regla devolvió un score parcial
             final_status = result.status
-            if 0.0 < rule_score < 100.0 and result.status not in (FindingStatus.NOT_APPLICABLE, FindingStatus.PARTIAL):
-                final_status = FindingStatus.PARTIAL
+
+            # Evitar asignar estados no soportados por el Enum de la BD (como PARCIAL)
+            if 0.0 < rule_score < 100.0 and final_status not in (
+                FindingStatus.NOT_APPLICABLE,
+                FindingStatus.PASSED,
+            ):
+                final_status = FindingStatus.FAILED
 
             # 4. Acumular estadísticas globales
-            if result.status == FindingStatus.NOT_APPLICABLE:
+            if final_status == FindingStatus.NOT_APPLICABLE:
                 not_applicable += 1
             else:
                 evaluable_rules_count += 1
@@ -90,21 +106,21 @@ class HardeningEvaluator:
                 if final_status == FindingStatus.PASSED:
                     passed += 1
                 else:
-                    # Tanto FAILED como PARTIAL cuentan como fallidos/no totalmente aprobados
                     failed += 1
 
-            # 5. Construir hallazgo
+            # 5. Hallazgo formateado para persistencia
             findings.append({
-                "rule_id": rule.rule_id,
+                "rule_id": rule_id,
+                "standard_version": rule_version,
                 "status": final_status,
                 "compliance_score": round(rule_score, 2),
-                "severity": rule.default_severity,
+                "severity": rule_severity,
                 "current_value": result.current_value,
                 "expected_value": result.expected_value,
-                "remediation_cmd": result.remediation_cmd,
+                "remediation_cmd": result.remediation_cmd or rule_spec.get("remediation_cmd"),
             })
 
-        # 6. Cálculo del Score global del perfil/auditoría (Promedio de porcentajes)
+        # 6. Cálculo del Score global
         score = (
             round(total_compliance_sum / evaluable_rules_count, 2)
             if evaluable_rules_count > 0
