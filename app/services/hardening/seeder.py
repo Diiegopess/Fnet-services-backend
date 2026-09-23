@@ -130,7 +130,14 @@ async def seed_hardening_data(session: AsyncSession) -> None:
             elif "GAMMA" in profile_name_upper:
                 profile.rules = [r for r in catalog_rules if r.standard == "GAMMA"]
             elif "FORTINET" in profile_name_upper:
-                profile.rules = [r for r in catalog_rules if r.standard in ("FORTINET", "FORTI")]
+                fortinet_rules = [
+                    r for r in catalog_rules
+                    if r.standard in ("FORTINET", "FORTINET_BP", "FORTI")
+                ]
+                profile.rules = fortinet_rules
+                versions = {r.standard_version for r in fortinet_rules}
+                if len(versions) == 1:
+                    profile.standard_version = versions.pop()
 
         await session.commit()
         logger.info("--> [HARDENING SEEDER] Perfiles actualizados exitosamente con sus reglas correspondientes.")

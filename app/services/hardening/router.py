@@ -16,6 +16,7 @@ from app.services.hardening.dependencies import (
     get_devices_api,
     get_hardening_service,
 )
+from app.services.hardening.exceptions import InvalidExecutionPayloadException
 from app.services.hardening.schemas import (
     AuditExecutionRequest,
     AuditReportResponse,
@@ -112,6 +113,11 @@ async def run_audit(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Error de comunicación con el dispositivo FortiGate: {str(e)}",
+        )
+    except InvalidExecutionPayloadException as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
         )
     except Exception as e:
         raise HTTPException(

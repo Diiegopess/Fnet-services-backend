@@ -64,13 +64,18 @@ class HardeningService:
 
         # 1. Determinar los IDs de reglas a ejecutar
         target_rule_ids: List[str] = []
+        profile_rules = None
 
         if execution_type in (ExecutionType.FULL_STANDARD, ExecutionType.ASSIGNED_PROFILE):
             if not profile_id:
                 raise InvalidExecutionPayloadException(
                     "Se requiere 'profile_id' para ejecuciones por estándar o perfil asignado."
                 )
-            target_rule_ids = await self.repository.get_profile_rule_ids(profile_id)
+            profile = await self.repository.get_profile_by_id(profile_id)
+            profile_rules = [
+                rule for rule in profile.rules if getattr(rule, "is_active", True)
+            ]
+            target_rule_ids = [rule.id for rule in profile_rules]
 
         elif execution_type == ExecutionType.CUSTOM_ADHOC:
             if not adhoc_rule_ids:
@@ -84,10 +89,15 @@ class HardeningService:
                 "No se encontraron reglas configuradas para ejecutar en esta solicitud."
             )
 
-        # 2. Cargar las reglas directamente desde la BD
-        rules_to_run = await self.repository.get_rules_by_ids(
-            rule_ids=target_rule_ids, standard_version=standard_version
-        )
+        # 2. Para perfiles, conservar la versión de cada asociación (PK compuesta).
+        # No volver a filtrar por la versión del request: perfiles antiguos pueden
+        # tener una versión histórica en su cabecera, pero reglas versionadas válidas.
+        if profile_rules is not None:
+            rules_to_run = profile_rules
+        else:
+            rules_to_run = await self.repository.get_rules_by_ids(
+                rule_ids=target_rule_ids, standard_version=standard_version
+            )
 
         if not rules_to_run:
             raise InvalidExecutionPayloadException(

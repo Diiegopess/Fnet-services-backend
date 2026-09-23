@@ -1,0 +1,1623 @@
+[
+  {
+    "id": "CIS-1.1",
+    "name": "Ensure DNS Server Configured",
+    "description": "Garantiza que el firewall tenga configurados servidores DNS corporativos o de confianza para evitar MitM.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/dns",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "primary",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null,
+            "96.45.45.45",
+            "96.45.46.46"
+          ],
+          "description": "El DNS primario debe estar configurado y no usar las IPs por defecto de Fortinet"
+        }
+      ],
+      "remediation_cmd": "config system dns\n  set primary <ip_dns_primario>\n  set secondary <ip_dns_secundario>\nend"
+    }
+  },
+  {
+    "id": "CIS-1.2",
+    "name": "Block Intra-Zone Traffic",
+    "description": "Garantiza que el tráfico entre interfaces de la misma zona esté bloqueado por defecto para evitar desplazamiento lateral.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/zone",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "intrazone",
+          "operator": "equals",
+          "expected": "deny",
+          "description": "Todas las zonas deben tener el parámetro intrazone en deny"
+        }
+      ],
+      "remediation_cmd": "config system zone\n  edit \"<nombre_zona>\"\n    set intrazone deny\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-1.3",
+    "name": "Disable Management Services on WAN",
+    "description": "Garantiza que los servicios de gestión administrativa estén deshabilitados en interfaces WAN.",
+    "category": "Network Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "filter": {
+        "field": "role",
+        "operator": "equals",
+        "value": "wan"
+      },
+      "checks": [
+        {
+          "field": "allowaccess",
+          "operator": "disjoint_tokens",
+          "forbidden": [
+            "https",
+            "http",
+            "ping",
+            "ssh",
+            "snmp",
+            "radius-acct"
+          ],
+          "description": "Interfaces WAN sin servicios administrativos expuestos"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    unselect allowaccess <servicios>\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.1",
+    "name": "Ensure Pre-Login Banner",
+    "description": "Garantiza que el banner de pre-inicio de sesión esté activo para advertir a los usuarios no autorizados sobre las restricciones de acceso antes del inicio de sesión.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "pre-login-banner",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El banner de pre-inicio de sesión debe estar activado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set pre-login-banner enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.2",
+    "name": "Ensure Post-Login Banner",
+    "description": "Garantiza que el banner posterior al inicio de sesión esté activo para notificar los términos legales y responsabilidades de uso una vez autenticado el usuario.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "post-login-banner",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El banner post-login debe estar activado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set post-login-banner enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.3",
+    "name": "Ensure Timezone Configured",
+    "description": "Verifica que la zona horaria esté explícitamente configurada en el sistema para garantizar la consistencia de marcas de tiempo en auditorías, logs y certificados.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "timezone",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "La zona horaria debe estar definida explícitamente"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set timezone <id_zona_horaria>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.4",
+    "name": "Ensure NTP Server Configured",
+    "description": "Garantiza que la sincronización de tiempo mediante NTP esté habilitada y activa con servidores definidos.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/ntp",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El servicio de sincronización NTP debe estar habilitado"
+        },
+        {
+          "field": "ntpserver",
+          "operator": "not_in",
+          "expected": [
+            [],
+            null,
+            ""
+          ],
+          "description": "Debe existir al menos un servidor NTP configurado"
+        }
+      ],
+      "remediation_cmd": "config system ntp\n  set status enable\n  config ntpserver\n    edit 1\n      set server \"<IP_o_FQDN_NTP>\"\n    next\n  end\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.5",
+    "name": "Ensure Hostname Set",
+    "description": "Garantiza que el nombre del dispositivo esté personalizado y no utilice el nombre por defecto del modelo.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "hostname",
+          "operator": "not_regex_match",
+          "expected": "^(FortiGate|FGT)",
+          "description": "El hostname no debe comenzar con los prefijos genéricos de fábrica FortiGate o FGT"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set hostname \"<Nuevo_Nombre_FW>\"\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.6",
+    "name": "Ensure FortiGuard Anycast Enabled",
+    "description": "Asegura el uso de Anycast para las comunicaciones con FortiGuard, optimizando el rendimiento y garantizando el cifrado en las consultas.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/fortiguard",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "fortiguard-anycast",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "FortiGuard Anycast debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config system fortiguard\n  set fortiguard-anycast enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.7",
+    "name": "Disable USB Auto-Install",
+    "description": "Deshabilita la instalación automática de firmware y archivos de configuración a través del puerto USB para evitar manipulaciones físicas.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/auto-install",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "auto-install-config",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La auto-instalación de configuración desde USB debe estar desactivada"
+        },
+        {
+          "field": "auto-install-image",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La auto-instalación de firmware desde USB debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system auto-install\n  set auto-install-config disable\n  set auto-install-image disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.8",
+    "name": "Disable TLS Static Keys",
+    "description": "Deshabilita el soporte de cifrados con claves estáticas en sesiones TLS para garantizar Perfect Forward Secrecy (PFS).",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "ssl-static-key-ciphers",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "Cifrados de clave estática SSL/TLS deben estar desactivados"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set ssl-static-key-ciphers disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.9",
+    "name": "Enable Global Strong Encryption",
+    "description": "Fuerza el uso exclusivo de algoritmos de cifrado fuertes en todo el sistema.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "strong-crypto",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El parámetro strong-crypto debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set strong-crypto enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.10",
+    "name": "Enforce TLS 1.3 on Admin GUI",
+    "description": "Garantiza que el acceso a la interfaz web administrativa requiera TLS 1.3 para proteger la sesión contra ataques de degradación de cifrado.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-https-ssl-versions",
+          "operator": "equals",
+          "expected": "tlsv1-3",
+          "description": "La versión TLS permitida en el portal HTTPS debe ser exclusivamente TLS 1.3"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-https-ssl-versions tlsv1-3\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.11",
+    "name": "Ensure Central Management Configured",
+    "description": "Verifica que el dispositivo esté integrado con una plataforma de gestión centralizada (como FortiManager).",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/central-management",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "type",
+          "operator": "in",
+          "expected": [
+            "fortimanager",
+            "fortiguard"
+          ],
+          "description": "El tipo de gestión centralizada debe ser fortimanager o fortiguard"
+        }
+      ],
+      "remediation_cmd": "config system central-management\n  set type fortimanager\n  set fmg \"<IP_o_FQDN_FortiManager>\"\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.12",
+    "name": "Log Single CPU Core Overload",
+    "description": "Habilita el registro de eventos cuando un único núcleo del CPU supere el umbral de carga.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "log-single-cpu-high",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "La alerta de saturación por núcleo individual de CPU debe estar habilitada"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set log-single-cpu-high enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.1.13",
+    "name": "Hide Hostname on Login GUI",
+    "description": "Oculta el nombre del dispositivo en la pantalla de inicio de sesión de la GUI para evitar revelar información en tareas de reconocimiento.",
+    "category": "System Settings",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "gui-display-hostname",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La visualización del hostname en la pantalla de autenticación debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set gui-display-hostname disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.1",
+    "name": "Ensure Admin Idle Timeout",
+    "description": "Configura el tiempo máximo de inactividad antes de cerrar la sesión de administrador para prevenir accesos no autorizados por consolas desatendidas.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admintimeout",
+          "operator": "range_inclusive",
+          "expected": [
+            1,
+            15
+          ],
+          "description": "El tiempo de inactividad admintimeout debe estar entre 1 y 15 minutos"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admintimeout 10\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.2",
+    "name": "Ensure Admin Password Policy",
+    "description": "Habilita y fuerza la política global de contraseñas para garantizar la complejidad y longitud mínima de las credenciales locales.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/password-policy",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "La política de contraseñas para administradores debe estar habilitada"
+        }
+      ],
+      "remediation_cmd": "config system password-policy\n  set status enable\n  set min-lower-case-letter 1\n  set min-upper-case-letter 1\n  set min-non-alphanumeric 1\n  set min-number 1\n  set minimum-length 12\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.3",
+    "name": "Ensure Admin Lockout Duration",
+    "description": "Define la duración del bloqueo de cuenta tras múltiples intentos fallidos para mitigar ataques de fuerza bruta.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-lockout-duration",
+          "operator": "gte",
+          "expected": 60,
+          "description": "La duración de bloqueo admin-lockout-duration debe ser de al menos 60 segundos"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-lockout-duration 60\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.4",
+    "name": "Ensure Admin Lockout Threshold",
+    "description": "Establece el número máximo de intentos fallidos permitidos antes de bloquear temporalmente el acceso a la cuenta de administración.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-lockout-threshold",
+          "operator": "range_inclusive",
+          "expected": [
+            1,
+            3
+          ],
+          "description": "El umbral de intentos fallidos admin-lockout-threshold debe estar entre 1 y 3 intentos"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-lockout-threshold 3\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.5",
+    "name": "Ensure Admin Two-Factor Authentication",
+    "description": "Exige autenticación de dos factores (2FA/MFA) para todas las cuentas locales de administración.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/admin",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "two-factor",
+          "operator": "not_in",
+          "expected": [
+            "disable",
+            "",
+            null
+          ],
+          "description": "Cada cuenta de administrador debe tener habilitado 2FA (fortitoken, email o sms)"
+        }
+      ],
+      "remediation_cmd": "config system admin\n  edit \"<nombre_admin>\"\n    set two-factor fortitoken\n    set fortitoken \"<SN_token>\"\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.6",
+    "name": "Disable or Change Admin HTTP Port",
+    "description": "Deshabilita o cambia el puerto HTTP por defecto (puerto 80) o fuerza la redirección hacia HTTPS para evitar tráfico en texto plano.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "any_of": [
+        {
+          "field": "admin-https-redirect",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "La redirección automática de HTTP a HTTPS debe estar activada"
+        },
+        {
+          "field": "admin-port",
+          "operator": "not_equals",
+          "expected": "80",
+          "description": "El puerto HTTP no debe ser el puerto por defecto 80"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-https-redirect enable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.7",
+    "name": "Change Admin HTTPS Port",
+    "description": "Cambia el puerto por defecto de administración HTTPS (443) para reducir escaneos automatizados en la interfaz de gestión.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-sport",
+          "operator": "not_in",
+          "expected": [
+            "443",
+            443
+          ],
+          "description": "El puerto administrativo HTTPS admin-sport debe ser diferente a 443"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-sport 8443\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.8",
+    "name": "Change Admin SSH Port",
+    "description": "Cambia el puerto estándar de administración SSH (22) para reducir intentos de fuerza bruta en la consola de comandos.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "admin-ssh-port",
+          "operator": "not_in",
+          "expected": [
+            "22",
+            22
+          ],
+          "description": "El puerto de administración SSH admin-ssh-port debe ser diferente a 22"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set admin-ssh-port 2222\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.9",
+    "name": "Disable SSH Weak Ciphers",
+    "description": "Deshabilita algoritmos de cifrado vulnerables (como CBC) y HMAC débiles en SSH para prevenir ataques criptográficos.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "ssh-cbc-cipher",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El cifrado CBC en SSH debe estar deshabilitado"
+        },
+        {
+          "field": "ssh-hmac-md5",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El algoritmo HMAC-MD5 en SSH debe estar deshabilitado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set ssh-cbc-cipher disable\n  set ssh-hmac-md5 disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.10",
+    "name": "Restrict Admin Access to Trusted Hosts",
+    "description": "Garantiza que las cuentas de administración local tengan restringido el acceso únicamente a direcciones IP o subredes de confianza.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/admin",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "trusthost1",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null,
+            "0.0.0.0 0.0.0.0",
+            "0.0.0.0/0"
+          ],
+          "description": "El administrador debe tener definida al menos una IP o subred de confianza en trusthost1"
+        }
+      ],
+      "remediation_cmd": "config system admin\n  edit \"<nombre_admin>\"\n    set trusthost1 <IP_Gestion>/32\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.2.11",
+    "name": "Restrict Management Access on Interfaces",
+    "description": "Verifica que protocolos de gestión administrativa en texto claro (HTTP, TELNET) estén deshabilitados en todas las interfaces.",
+    "category": "Administrator Accounts",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "allowaccess",
+          "operator": "disjoint_tokens",
+          "forbidden": [
+            "http",
+            "telnet"
+          ],
+          "description": "Ninguna interfaz de red debe tener permitidos los accesos administrativos no seguros HTTP o TELNET"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    unselect allowaccess http telnet\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.1",
+    "name": "Disable CDP on Interfaces",
+    "description": "Deshabilita el protocolo Cisco Discovery Protocol (CDP) en todas las interfaces para evitar la divulgación innecesaria de información de red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "cdp",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El parámetro cdp debe estar en disable en todas las interfaces"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    set cdp disable\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.2",
+    "name": "Disable LLDP on Interfaces",
+    "description": "Deshabilita la transmisión y recepción del protocolo LLDP en las interfaces para reducir el reconocimiento de topología de red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "lldp-transmission",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La transmisión LLDP debe estar desactivada"
+        },
+        {
+          "field": "lldp-reception",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "La recepción LLDP debe estar desactivada"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<nombre_interfaz>\"\n    set lldp-transmission disable\n    set lldp-reception disable\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.3",
+    "name": "Disable Ping on External Interfaces",
+    "description": "Deshabilita la respuesta a PING (ICMP Echo Request) en interfaces externas o WAN para prevenir el mapeo activo de la red.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "filter": {
+        "field": "role",
+        "operator": "equals",
+        "value": "wan"
+      },
+      "checks": [
+        {
+          "field": "allowaccess",
+          "operator": "disjoint_tokens",
+          "forbidden": [
+            "ping"
+          ],
+          "description": "El servicio ping debe estar ausente en allowaccess de interfaces WAN"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<interfaz_wan>\"\n    unselect allowaccess ping\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.4",
+    "name": "Disable Ident Service",
+    "description": "Garantiza que el servicio de identificación (puerto TCP 113) esté deshabilitado para evitar la fuga de nombres de usuarios y procesos.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "ident-accept",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El parámetro ident-accept debe estar configurado en disable"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set ident-accept disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.5",
+    "name": "Secure System DNS Settings",
+    "description": "Verifica que la resolución de nombres DNS esté configurada utilizando servidores confiables y válidos.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/dns",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "primary",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null,
+            "0.0.0.0"
+          ],
+          "description": "Debe haber una dirección IP de DNS primario corporativa o de confianza configurada"
+        }
+      ],
+      "remediation_cmd": "config system dns\n  set primary <IP_DNS_Primario>\n  set secondary <IP_DNS_Secundario>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.6",
+    "name": "Disable SIP/H.323 Session Helpers",
+    "description": "Deshabilita los asistentes de sesión (ALG) para SIP y H.323 si no son requeridos para reducir la superficie de ataque.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/system/session-helper",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "name",
+          "operator": "not_in",
+          "expected": [
+            "sip",
+            "h323"
+          ],
+          "description": "No deben existir session-helpers activos para protocolos SIP o H.323"
+        }
+      ],
+      "remediation_cmd": "config system session-helper\n  # Consultar con 'show' los IDs de sip y h323 y eliminarlos:\n  delete <ID_HELPER>\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.7",
+    "name": "Ensure Secure SNMP Configuration",
+    "description": "Exige que el agente SNMP esté deshabilitado si no se utiliza con cifrado.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system.snmp/sysinfo",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El agente general SNMP debe estar deshabilitado salvo que se use SNMPv3 exclusivo"
+        }
+      ],
+      "remediation_cmd": "config system snmp sysinfo\n  set status disable\nend"
+    }
+  },
+  {
+    "id": "CIS-2.3.8",
+    "name": "Encrypt FortiManager Connection",
+    "description": "Garantiza que la comunicación con FortiManager utilice cifrado alto.",
+    "category": "Network / Services",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/central-management",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "enc-algorithm",
+          "operator": "equals",
+          "expected": "high",
+          "description": "El algoritmo de cifrado para la gestión centralizada debe estar en high"
+        }
+      ],
+      "remediation_cmd": "config system central-management\n  set enc-algorithm high\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.1",
+    "name": "Avoid 'ALL' Address Object in Accept Policies",
+    "description": "Garantiza que las políticas de firewall de tipo ACCEPT no utilicen 'all' en origen y destino simultáneamente, aplicando el principio de mínimo privilegio.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "filter": {
+        "all_of": [
+          {
+            "field": "action",
+            "operator": "equals",
+            "value": "accept"
+          },
+          {
+            "field": "status",
+            "operator": "not_equals",
+            "value": "disable"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "operator": "not_both_contain",
+          "field_a": "srcaddr",
+          "field_b": "dstaddr",
+          "target_value": "all",
+          "description": "Las políticas de aceptación activas no deben usar 'all' como origen y destino al mismo tiempo"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  edit <ID_POLITICA>\n    set srcaddr <Objeto_Origen_Especifico>\n    set dstaddr <Objeto_Destino_Especifico>\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.2",
+    "name": "Ensure Policies Have Log Traffic Enabled",
+    "description": "Verifica que las políticas de firewall activas tengan habilitado el registro de tráfico (logtraffic) para auditoría y visibilidad.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "filter": {
+        "all_of": [
+          {
+            "field": "action",
+            "operator": "equals",
+            "value": "accept"
+          },
+          {
+            "field": "status",
+            "operator": "not_equals",
+            "value": "disable"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "logtraffic",
+          "operator": "not_in",
+          "expected": [
+            "disable",
+            "",
+            null
+          ],
+          "description": "El registro de tráfico logtraffic debe estar en 'all' o 'utm' en políticas de aceptación activas"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  edit <ID_POLITICA>\n    set logtraffic all\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.3",
+    "name": "Avoid 'ALL' Service in Accept Policies",
+    "description": "Garantiza que las políticas de firewall activas no utilicen el servicio 'ALL' para evitar la apertura indiscriminada de puertos TCP/UDP.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "filter": {
+        "all_of": [
+          {
+            "field": "action",
+            "operator": "equals",
+            "value": "accept"
+          },
+          {
+            "field": "status",
+            "operator": "not_equals",
+            "value": "disable"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "service",
+          "operator": "nested_property_not_in",
+          "property": "name",
+          "forbidden": [
+            "ALL",
+            "all"
+          ],
+          "description": "El servicio 'ALL' no debe ser utilizado en políticas de aceptación activas"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  edit <ID_POLITICA>\n    set service <Servicios_Especificos>\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.4",
+    "name": "Log Implicit Deny Policy Traffic",
+    "description": "Verifica que el registro de paquetes inválidos y tráfico denegado esté activo globalmente para auditoría de seguridad.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/global",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "log-invalid-packet",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El registro de paquetes inválidos log-invalid-packet debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config system global\n  set log-invalid-packet enable\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.5",
+    "name": "Enable UTM Security Profiles",
+    "description": "Garantiza que todas las políticas de firewall de aceptación apliquen perfiles de inspección de seguridad UTM.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "filter": {
+        "all_of": [
+          {
+            "field": "action",
+            "operator": "equals",
+            "value": "accept"
+          },
+          {
+            "field": "status",
+            "operator": "not_equals",
+            "value": "disable"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "utm-status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "Las políticas de aceptación activas deben tener utm-status en enable"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  edit <ID_POLITICA>\n    set utm-status enable\n    set av-profile \"default\"\n    set ips-sensor \"default\"\n    set webfilter-profile \"default\"\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.6",
+    "name": "Ensure SSL Deep Inspection",
+    "description": "Verifica que las políticas con perfiles de seguridad utilicen inspección profunda de SSL/TLS (deep-inspection) para inspeccionar contenido cifrado.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "filter": {
+        "all_of": [
+          {
+            "field": "action",
+            "operator": "equals",
+            "value": "accept"
+          },
+          {
+            "field": "status",
+            "operator": "not_equals",
+            "value": "disable"
+          },
+          {
+            "field": "utm-status",
+            "operator": "equals",
+            "value": "enable"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "ssl-ssh-profile",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null,
+            "no-inspection",
+            "certificate-inspection"
+          ],
+          "description": "Las políticas UTM deben emplear un perfil de inspección profunda y no sólo certificate-inspection o no-inspection"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  edit <ID_POLITICA>\n    set ssl-ssh-profile \"deep-inspection\"\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-3.1.7",
+    "name": "Audit Disabled Policies",
+    "description": "Detecta políticas de firewall en estado deshabilitado para mantener depurada la tabla de reglas.",
+    "category": "Policy and Objects",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/firewall/policy",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "policyid",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "not_equals",
+          "expected": "disable",
+          "description": "Las políticas en la tabla no deben estar en estado deshabilitado (status: disable)"
+        }
+      ],
+      "remediation_cmd": "config firewall policy\n  delete <ID_POLITICA>\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.1",
+    "name": "Ensure AntiVirus Profile Configured",
+    "description": "Garantiza que los perfiles de Antivirus escaneen protocolos clave (HTTP) y utilicen análisis activo de amenazas.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/antivirus/profile",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "require_non_empty": true,
+      "checks": [
+        {
+          "field": "http.options",
+          "operator": "contains_token",
+          "expected": "scan",
+          "description": "El perfil de Antivirus debe tener activada la opción 'scan' en el protocolo HTTP"
+        }
+      ],
+      "remediation_cmd": "config antivirus profile\n  edit \"default\"\n    config http\n      set options scan\n    end\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.2",
+    "name": "Ensure Web Filter Blocks Malicious Categories",
+    "description": "Verifica que existan perfiles de Filtrado Web activos para bloquear categorías de alto riesgo como Malware, Botnets y Phishing.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/webfilter/profile",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "require_non_empty": true,
+      "checks": [
+        {
+          "field": "name",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "Debe existir al menos un perfil de Filtrado Web válido configurado en el sistema"
+        }
+      ],
+      "remediation_cmd": "config webfilter profile\n  edit \"default\"\n    config ftgd-wf\n      config filters\n        edit 1\n          set category 26\n          set action block\n        next\n      end\n    end\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.3",
+    "name": "Ensure IPS Sensor Blocks High/Critical Attacks",
+    "description": "Garantiza que el sensor del Sistema de Prevención de Intrusiones (IPS) esté configurado para bloquear amenazas en la red.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/ips/sensor",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "require_non_empty": true,
+      "checks": [
+        {
+          "field": "name",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "Debe existir al menos un sensor IPS activo configurado en el sistema"
+        }
+      ],
+      "remediation_cmd": "config ips sensor\n  edit \"default\"\n    config entries\n      edit 1\n        set severity high critical\n        set action block\n      next\n    end\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.4",
+    "name": "Ensure Application Control Blocks High Risk Apps",
+    "description": "Verifica que el perfil de Control de Aplicaciones esté configurado para bloquear aplicaciones no autorizadas o evasivas.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/application/list",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "require_non_empty": true,
+      "checks": [
+        {
+          "field": "name",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "Debe existir al menos un perfil de Application Control configurado en el sistema"
+        }
+      ],
+      "remediation_cmd": "config application list\n  edit \"default\"\n    config entries\n      edit 1\n        set category 2\n        set action block\n      next\n    end\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.5",
+    "name": "Ensure DNS Filter Blocks Malicious Domains",
+    "description": "Garantiza que los perfiles de DNS Filter bloqueen activamente resoluciones hacia sitios maliciosos y servidores Botnet/C&C.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/dnsfilter/profile",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "require_non_empty": true,
+      "checks": [
+        {
+          "field": "block-botnet",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El parámetro block-botnet debe estar en enable en todos los perfiles de filtrado DNS"
+        }
+      ],
+      "remediation_cmd": "config dnsfilter profile\n  edit \"default\"\n    set block-botnet enable\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.6",
+    "name": "Ensure Botnet C&C IP Blocking Enabled",
+    "description": "Verifica que el bloqueo de conexiones hacia o desde IPs de servidores Botnet/C&C esté activo en interfaces WAN.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "filter": {
+        "field": "role",
+        "operator": "equals",
+        "value": "wan"
+      },
+      "checks": [
+        {
+          "field": "scan-botnet-connections",
+          "operator": "not_equals",
+          "expected": "disable",
+          "description": "Las interfaces WAN deben tener el parámetro scan-botnet-connections en 'block' o 'monitor'"
+        }
+      ],
+      "remediation_cmd": "config system interface\n  edit \"<interfaz_wan>\"\n    set scan-botnet-connections block\n  next\nend"
+    }
+  },
+  {
+    "id": "CIS-4.1.7",
+    "name": "Ensure FortiSandbox Integration",
+    "description": "Evalúa si el dispositivo está integrado con FortiSandbox para el análisis dinámico de amenazas avanzadas de día cero.",
+    "category": "Security Profiles",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/system/fortisandbox",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "La integración con FortiSandbox debe estar habilitada (status: enable)"
+        }
+      ],
+      "remediation_cmd": "config system fortisandbox\n  set status enable\n  set server \"fortisandbox-cloud\"\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.1",
+    "name": "Encrypt FortiAnalyzer/FortiManager Logging",
+    "description": "Garantiza que el envío de logs hacia FortiAnalyzer o FortiManager utilice cifrado (SSL/TLS) para proteger la confidencialidad de los eventos.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/log.fortianalyzer/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "enc-algorithm",
+          "operator": "not_equals",
+          "expected": "disable",
+          "description": "El algoritmo de cifrado en el envío de logs hacia FortiAnalyzer no debe estar en disable"
+        }
+      ],
+      "remediation_cmd": "config log fortianalyzer setting\n  set enc-algorithm high\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.2",
+    "name": "Ensure Remote Syslog Logging Configured",
+    "description": "Verifica que el dispositivo envíe sus registros a un servidor Syslog remoto/SIEM centralizado para almacenamiento persistente.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/log.syslogd/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El servicio de Syslog remoto debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config log syslogd setting\n  set status enable\n  set server \"<IP_Servidor_Syslog>\"\n  set mode reliable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.3",
+    "name": "Enable Event Logging for System Activity",
+    "description": "Asegura que el registro de eventos del sistema y autenticación administrativa esté totalmente activo.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/log/eventfilter",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "event",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro general de eventos debe estar en enable"
+        },
+        {
+          "field": "system",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro de eventos de sistema debe estar en enable"
+        },
+        {
+          "field": "admin",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El filtro de eventos de administración debe estar en enable"
+        }
+      ],
+      "remediation_cmd": "config log eventfilter\n  set event enable\n  set system enable\n  set admin enable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.4",
+    "name": "Ensure Disk Full Log Strategy",
+    "description": "Configura la acción cuando el almacenamiento local de disco se llena para evitar que el registro se detenga.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/log.disk/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "action",
+          "operator": "equals",
+          "expected": "overwrite",
+          "description": "La acción ante disco local lleno debe ser overwrite en lugar de nolog"
+        }
+      ],
+      "remediation_cmd": "config log disk setting\n  set action overwrite\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.5",
+    "name": "Ensure Log Threat Weight Active",
+    "description": "Garantiza que la ponderación de amenazas (Threat Weight) esté configurada para priorizar riesgos en la red.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/log/threat-weight",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "enable",
+          "description": "El cálculo de Threat Weight debe estar habilitado"
+        }
+      ],
+      "remediation_cmd": "config log threat-weight\n  set status enable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.6",
+    "name": "Disable RAM Memory Logging",
+    "description": "Deshabilita el almacenamiento de logs en memoria RAM para evitar consumo innecesario de recursos volátiles.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "LOW",
+    "required_endpoint": "api/v2/cmdb/log.memory/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El almacenamiento de logs en memoria RAM debe estar deshabilitado"
+        }
+      ],
+      "remediation_cmd": "config log memory setting\n  set status disable\nend"
+    }
+  },
+  {
+    "id": "CIS-5.1.7",
+    "name": "Ensure Alert Email Notifications",
+    "description": "Verifica que el envío de alertas por correo electrónico ante eventos críticos esté configurado con un destinatario válido.",
+    "category": "Logging and Reporting",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "MEDIUM",
+    "required_endpoint": "api/v2/cmdb/alertemail/setting",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "checks": [
+        {
+          "field": "mailto1",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "Debe existir al menos un correo de destino configurado en mailto1"
+        }
+      ],
+      "remediation_cmd": "config alertemail setting\n  set mailto1 \"<correo_admin_o_soc>\"\n  set email-interval 5\nend"
+    }
+  },
+  {
+    "id": "CIS-6.1.1",
+    "name": "Ensure HA Cluster Password Protection",
+    "description": "Garantiza que la sincronización en clúster (High Availability) esté protegida con una contraseña robusta para evitar la integración no autorizada de nodos.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/system/ha",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "any_of": [
+        {
+          "field": "mode",
+          "operator": "equals",
+          "expected": "standalone",
+          "description": "El dispositivo opera como nodo independiente (standalone)"
+        },
+        {
+          "field": "password",
+          "operator": "not_in",
+          "expected": [
+            "",
+            null
+          ],
+          "description": "El clúster HA cuenta con una contraseña de autenticación configurada"
+        }
+      ],
+      "remediation_cmd": "config system ha\n  set password <CONTRASEÃ‘A_ROBUSTA_HA>\nend"
+    }
+  },
+  {
+    "id": "CIS-6.2.1",
+    "name": "Enforce Minimum TLS 1.2 on SSL-VPN",
+    "description": "Asegura que el servicio SSL-VPN rechace conexiones con versiones obsoletas de TLS (TLS 1.0 y TLS 1.1) para proteger la transmisión de credenciales y datos.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/vpn.ssl/settings",
+    "rule_spec": {
+      "type": "single_record",
+      "target_path": "results",
+      "any_of": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "expected": "disable",
+          "description": "El servicio de SSL-VPN se encuentra deshabilitado"
+        },
+        {
+          "field": "ssl-min-proto-version",
+          "operator": "not_in",
+          "expected": [
+            "tls1.0",
+            "tls1.1",
+            "default",
+            ""
+          ],
+          "description": "La versión mínima de TLS en SSL-VPN debe ser TLS 1.2 o superior"
+        }
+      ],
+      "remediation_cmd": "config vpn ssl settings\n  set ssl-min-proto-version tls1.2\nend"
+    }
+  },
+  {
+    "id": "CIS-6.2.2",
+    "name": "Disable Weak Ciphers in IPsec Phase 1",
+    "description": "Verifica que las fases 1 de las VPN IPsec deshabiliten cifrados o firmas vulnerables como DES, 3DES o algoritmos de hashing tipo MD5.",
+    "category": "High Availability & VPN",
+    "standard": "CIS",
+    "standard_version": "v1.0.1",
+    "default_severity": "HIGH",
+    "required_endpoint": "api/v2/cmdb/vpn.ipsec/phase1-interface",
+    "rule_spec": {
+      "type": "collection",
+      "target_path": "results",
+      "identifier_field": "name",
+      "checks": [
+        {
+          "field": "proposal",
+          "operator": "disjoint_tokens",
+          "forbidden": [
+            "des",
+            "3des",
+            "md5"
+          ],
+          "description": "Las propuestas de cifrado en la Fase 1 no deben incluir DES, 3DES ni MD5"
+        }
+      ],
+      "remediation_cmd": "config vpn ipsec phase1-interface\n  edit \"<nombre_tunel>\"\n    set proposal aes256-sha256 aes128-sha256\n  next\nend"
+    }
+  }
+]

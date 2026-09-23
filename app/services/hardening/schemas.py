@@ -45,6 +45,7 @@ class HardeningProfileResponse(BaseModel):
     id: UUID
     name: str
     description: Optional[str] = None
+    standard_version: str
     profile_type: ProfileType
     is_active: bool
     created_at: datetime
@@ -93,26 +94,26 @@ class FindingResponse(BaseModel):
 
 
 class AuditReportResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
 
-    execution_id: UUID = Field(..., alias="id")
+    id: UUID
     device_id: UUID
     profile_id: Optional[UUID] = None
     execution_type: ExecutionType
     score: float = Field(0.0, description="Porcentaje total de cumplimiento de la auditoría.")
-    executed_at: datetime = Field(..., alias="created_at")
+    executed_at: datetime
 
-    passed_count: int = Field(..., alias="total_passed")
-    failed_count: int = Field(..., alias="total_failed")
-    not_applicable_count: int = Field(0, alias="total_not_applicable")
+    total_passed: int
+    total_failed: int
+    total_not_applicable: int = 0
     total_rules_evaluated: int = 0
 
-    findings: List[FindingResponse] = Field(default_factory=list, alias="findings_data")
+    findings: List[FindingResponse] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def compute_total_rules(self) -> "AuditReportResponse":
         if self.total_rules_evaluated == 0:
             self.total_rules_evaluated = (
-                self.passed_count + self.failed_count + self.not_applicable_count
+                self.total_passed + self.total_failed + self.total_not_applicable
             )
         return self

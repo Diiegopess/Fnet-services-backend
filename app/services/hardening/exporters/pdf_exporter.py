@@ -1,4 +1,5 @@
 import io
+from html import escape
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -59,7 +60,7 @@ class PDFReportExporter(BaseReportExporter):
         )
         elements.append(
             Paragraph(
-                f"Fecha de Ejecución: {report.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+                f"Fecha de Ejecución: {report.executed_at.strftime('%Y-%m-%d %H:%M:%S')}",
                 subtitle_style,
             )
         )
@@ -122,7 +123,12 @@ class PDFReportExporter(BaseReportExporter):
                 else str(f.severity)
             )
             score_val = f"{getattr(f, 'compliance_score', 0.0):.1f}%"
-            reason_val = f.reason or f.raw_evidence or "N/A"
+            reason_val = (
+                f.current_value
+                or f.expected_value
+                or f.remediation_cmd
+                or "N/A"
+            )
 
             findings_data.append(
                 [
@@ -130,7 +136,10 @@ class PDFReportExporter(BaseReportExporter):
                     Paragraph(status_val, cell_style),
                     Paragraph(severity_val, cell_style),
                     Paragraph(score_val, cell_style),
-                    Paragraph(reason_val[:120], cell_style),
+                    Paragraph(
+                        escape(str(reason_val)).replace("\n", "<br/>"),
+                        cell_style,
+                    ),
                 ]
             )
 

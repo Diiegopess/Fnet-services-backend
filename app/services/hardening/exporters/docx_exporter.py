@@ -19,7 +19,7 @@ class DOCXReportExporter(BaseReportExporter):
         p_info.add_run(f'ID Evaluación: ').bold = True
         p_info.add_run(f'{report.id}\n')
         p_info.add_run(f'Fecha de Ejecución: ').bold = True
-        p_info.add_run(f'{report.created_at.strftime("%Y-%m-%d %H:%M:%S")}\n')
+        p_info.add_run(f'{report.executed_at.strftime("%Y-%m-%d %H:%M:%S")}\n')
         p_info.add_run(f'Puntaje Global: ').bold = True
         p_info.add_run(f'{getattr(report, "score", 0.0):.1f}%')
 
@@ -42,7 +42,12 @@ class DOCXReportExporter(BaseReportExporter):
             row_cells[1].text = f.status.value if hasattr(f.status, 'value') else str(f.status)
             row_cells[2].text = f.severity.value if hasattr(f.severity, 'value') else str(f.severity)
             row_cells[3].text = f"{getattr(f, 'compliance_score', 0.0):.1f}%"
-            row_cells[4].text = f.reason or f.raw_evidence or "N/A"
+            row_cells[4].text = (
+                f.current_value
+                or f.expected_value
+                or f.remediation_cmd
+                or "N/A"
+            )
 
         buffer = io.BytesIO()
         doc.save(buffer)
