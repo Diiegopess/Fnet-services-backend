@@ -9,7 +9,6 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # 0. AÑADIR LA RAÍZ DEL PROYECTO AL PYTHONPATH
-# Permite que Alembic resuelva las importaciones dentro de 'app' sin importar dónde ejecutes el comando.
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
@@ -22,9 +21,15 @@ from app.audit.models import AuditLog  # noqa: F401
 from app.auth.models import AuthCredential  # noqa: F401
 from app.clients.models import Client, client_technicians  # noqa: F401
 from app.devices.models import FortigateDevice  # noqa: F401
-from app.services.hardening.models import HardeningProfile  # noqa: F401
-from app.users.models import User  # noqa: F401
-from app.vdoms.models import *  # noqa: F401, F403  
+from app.services.hardening.models import (  # noqa: F401
+    AuditFinding,
+    AuditReport,
+    HardeningProfile,
+    RuleCatalog,
+)
+from app.users.models import Permission, Role, User  # noqa: F401
+from app.vdoms.models import *  # noqa: F401, F403
+
 # Objeto de configuración de Alembic
 config = context.config
 

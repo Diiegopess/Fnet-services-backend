@@ -1,9 +1,7 @@
-# app/services/hardening/models.py
-
 import enum
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -17,14 +15,13 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.database import Base
 
-
-# --- ENUMS DEL DOMINIO ---
 
 class ProfileType(str, enum.Enum):
     SYSTEM = "SYSTEM"
@@ -51,8 +48,7 @@ class RuleSeverity(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
-# --- TABLA INTERMEDIA (PERFILES <-> REGLAS VERSIONADAS) ---
-
+# Tabla intermedia N:M
 profile_rules_association = Table(
     "hardening_profile_rules",
     Base.metadata,
@@ -72,88 +68,100 @@ profile_rules_association = Table(
 )
 
 
-# --- TABLAS PRINCIPALES ---
-
 class RuleCatalog(Base):
-    """Catálogo maestro de reglas desacopladas almacenadas como especificación JSONB."""
-
     __tablename__ = "hardening_rule_catalog"
 
-    # Clave primaria compuesta para permitir soporte multi-versión
-    id = Column(String(50), primary_key=True)
-    standard_version = Column(String(20), primary_key=True, default="v1.0.0")
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    standard_version: Mapped[str] = mapped_column(String(20), primary_key=True, default="v1.0.0")
 
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    category = Column(String(100), nullable=False)
-    standard = Column(String(50), nullable=False)  # Ej: 'CIS', 'FORTINET'
-    default_severity = Column(
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    standard: Mapped[str] = mapped_column(String(50), nullable=False)
+    default_severity: Mapped[RuleSeverity] = mapped_column(
         Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
         default=RuleSeverity.MEDIUM,
         nullable=False,
     )
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    required_endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
+    rule_spec: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    # Endpoint exacto que requiere el fetcher para el dump
-    required_endpoint = Column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
-    # Especificación técnica declarativa completa (checks, operators, expected, remediation)
-    rule_spec = Column(JSONB, nullable=False)
-
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    profiles: Mapped[List["HardeningProfile"]] = relationship(
+        "HardeningProfile",
+        secondary=profile_rules_association,
+        back_populates="rules",
+    )
 
 
 class HardeningProfile(Base):
     __tablename__ = "hardening_profiles"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(150), nullable=False, unique=True)
-    description = Column(Text, nullable=True)
-    standard_version = Column(String(20), default="v1.0.1", nullable=False) 
-    profile_type = Column(
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    standard_version: Mapped[str] = mapped_column(String(20), default="v1.0.1", nullable=False)
+    profile_type: Mapped[ProfileType] = mapped_column(
         Enum(ProfileType, values_callable=lambda x: [e.value for e in x]),
         default=ProfileType.CUSTOM,
         nullable=False,
     )
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
-    created_by = Column(UUID(as_uuid=True), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
-    rules = relationship(
-        "RuleCatalog", secondary=profile_rules_association, backref="profiles"
+    rules: Mapped[List[RuleCatalog]] = relationship(
+        "RuleCatalog",
+        secondary=profile_rules_association,
+        back_populates="profiles",
     )
 
 
 class AuditReport(Base):
     __tablename__ = "hardening_audit_reports"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    device_id = Column(UUID(as_uuid=True), nullable=False)
-    vdom_id = Column(UUID(as_uuid=True), nullable=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    vdom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
-    execution_type = Column(
+    execution_type: Mapped[ExecutionType] = mapped_column(
         Enum(ExecutionType, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
-    profile_id = Column(
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hardening_profiles.id", ondelete="SET NULL"),
         nullable=True,
     )
 
-    score = Column(Float, nullable=False)
-    total_passed = Column(Integer, default=0, nullable=False)
-    total_failed = Column(Integer, default=0, nullable=False)
-    total_not_applicable = Column(Integer, default=0, nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    total_passed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_not_applicable: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    executed_by = Column(UUID(as_uuid=True), nullable=True)
-    executed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    executed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
-    findings = relationship(
+    findings: Mapped[List["AuditFinding"]] = relationship(
         "AuditFinding", back_populates="report", cascade="all, delete-orphan"
     )
 
@@ -161,26 +169,37 @@ class AuditReport(Base):
 class AuditFinding(Base):
     __tablename__ = "hardening_audit_findings"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    report_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hardening_audit_reports.id", ondelete="CASCADE"),
         nullable=False,
     )
-    rule_id = Column(String(50), nullable=False)
-    standard_version = Column(String(20), default="v1.0.0", nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    standard_version: Mapped[str] = mapped_column(String(20), default="v1.0.0", nullable=False)
 
-    status = Column(
+    status: Mapped[FindingStatus] = mapped_column(
         Enum(FindingStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
-    compliance_score = Column(Float, default=0.0, nullable=False)
-    severity = Column(
+    compliance_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    severity: Mapped[RuleSeverity] = mapped_column(
         Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
-    current_value = Column(Text, nullable=True)
-    expected_value = Column(Text, nullable=True)
-    remediation_cmd = Column(Text, nullable=True)
+    current_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remediation_cmd: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    report = relationship("AuditReport", back_populates="findings")
+    report: Mapped[AuditReport] = relationship("AuditReport", back_populates="findings")
+
+    # Clave Foránea Compuesta hacia RuleCatalog para mantener la consistencia
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["rule_id", "standard_version"],
+            ["hardening_rule_catalog.id", "hardening_rule_catalog.standard_version"],
+            ondelete="CASCADE",
+        ),
+    )

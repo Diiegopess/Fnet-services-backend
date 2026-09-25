@@ -1,17 +1,16 @@
-"""
-Módulo de Modelos SQLAlchemy para el Dominio de Clientes.
-"""
-
 import uuid
-from datetime import datetime, timezone
-from typing import List
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, Text
+from datetime import datetime
+from typing import List, TYPE_CHECKING
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.database import Base
 
-# Tabla de asociación N:M para técnicos/usuarios asignados al cliente
+if TYPE_CHECKING:
+    from app.users.models import User
+
+# Tabla de asociación N:M
 client_technicians = Table(
     "client_technicians",
     Base.metadata,
@@ -45,21 +44,22 @@ class Client(Base):
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Relación con la entidad User (asociación de técnicos)
-    assigned_technicians = relationship(
+    # Relación con User agregando back_populates
+    assigned_technicians: Mapped[List["User"]] = relationship(
         "User",
         secondary=client_technicians,
+        back_populates="assigned_clients",
         lazy="selectin",
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )

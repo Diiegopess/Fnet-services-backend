@@ -1,7 +1,6 @@
-# app/audit/models.py
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import DateTime, String
+from datetime import datetime
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +15,6 @@ class AuditLog(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    # AGREGAR ESTE CAMPO:
     event_id: Mapped[str | None] = mapped_column(
         String(255),
         index=True,
@@ -48,7 +46,7 @@ class AuditLog(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
         index=True,
         nullable=False,
     )
