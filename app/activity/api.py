@@ -1,5 +1,5 @@
 """
-API Pública del Módulo de Auditoría.
+API Pública del Módulo de Actividad (Activity Logs).
 
 Punto único de contacto interno para otros módulos del backend.
 """
@@ -9,11 +9,11 @@ from typing import Any, Optional, Sequence
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit import service as audit_service
-from app.audit.schemas import AuditLogCreate, AuditLogResponse
+from app.activity import service as activity_service
+from app.activity.schemas import ActivityLogCreate, ActivityLogResponse
 
 
-class AuditAPI:
+class ActivityAPI:
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -24,12 +24,12 @@ class AuditAPI:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         payload: Optional[dict[str, Any]] = None,
-    ) -> AuditLogResponse:
+    ) -> ActivityLogResponse:
         """
-        Registra directamente un evento en la bitácora de auditoría sin
-        requerir que otros módulos importen esquemas internos de audit.
+        Registra directamente un evento en la bitácora de actividad sin
+        requerir que otros módulos importen esquemas internos de activity.
         """
-        log_in = AuditLogCreate(
+        log_in = ActivityLogCreate(
             event_id=str(uuid.uuid4()),
             event_type=event_type,
             user_id=user_id,
@@ -38,8 +38,8 @@ class AuditAPI:
             payload=payload or {},
             occurred_at=datetime.now(timezone.utc),
         )
-        log = await audit_service.record_audit_log(self.db, log_in)
-        return AuditLogResponse.model_validate(log)
+        log = await activity_service.record_activity_log(self.db, log_in)
+        return ActivityLogResponse.model_validate(log)
 
     async def query_logs(
         self,
@@ -49,9 +49,9 @@ class AuditAPI:
         user_id: Optional[uuid.UUID] = None,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
-    ) -> Sequence[AuditLogResponse]:
-        """Consulta registros de auditoría retornando DTOs Pydantic."""
-        logs = await audit_service.get_audit_logs(
+    ) -> Sequence[ActivityLogResponse]:
+        """Consulta registros de actividad retornando DTOs Pydantic."""
+        logs = await activity_service.get_activity_logs(
             db=self.db,
             skip=skip,
             limit=limit,
@@ -60,4 +60,4 @@ class AuditAPI:
             from_date=from_date,
             to_date=to_date,
         )
-        return [AuditLogResponse.model_validate(log) for log in logs]
+        return [ActivityLogResponse.model_validate(log) for log in logs]

@@ -1,39 +1,43 @@
 """
-Catálogo Centralizado de Permisos del Sistema (RBAC).
+Registro central e independiente de Permisos del Sistema (RBAC).
+El Core NO conoce los subdominios; los subdominios o el bootstrap registran sus permisos.
 """
 
-from enum import Enum
+from typing import Dict
+
+# Diccionario interno en memoria que actuará como Registro Central
+_REGISTERED_SYSTEM_PERMISSIONS: Dict[str, str] = {}
 
 
-class PermissionEnum(str, Enum):
-    # --- USUARIOS ---
-    USERS_READ = "users:read"
-    USERS_CREATE = "users:create"
-    USERS_UPDATE = "users:update"
-    USERS_DELETE = "users:delete"
-    USERS_ASSIGN_ROLE = "users:assign_role"
+def register_domain_permissions(permissions_dict: dict) -> None:
+    """
+    Permite a cualquier subdominio registrar su mapa de permisos {Enum/str: descripcion}.
+    """
+    for perm, desc in permissions_dict.items():
+        key = perm.value if hasattr(perm, "value") else str(perm)
+        _REGISTERED_SYSTEM_PERMISSIONS[key] = desc
 
-    # --- AUDITORÍA ---
-    AUDIT_READ = "audit:read"
-    AUDIT_EXPORT = "audit:export"
 
-    # --- CLIENTES / ORGANIZACIONES ---
-    CLIENTS_READ = "clients:read"
-    CLIENTS_CREATE = "clients:create"
-    CLIENTS_UPDATE = "clients:update"
-    CLIENTS_DELETE = "clients:delete"
-    CLIENTS_ASSIGN_TECHNICIAN = "clients:assign_technician"
+def load_all_domain_permissions() -> None:
+    """
+    Importa bajo demanda los permisos de cada subdominio.
+    Útil para scripts de administración, CLI y seeders donde Uvicorn no ha cargado los routers HTTP.
+    """
+    import app.activity.permissions  # noqa: F401
+    import app.auth.permissions  # noqa: F401
+    import app.clients.permissions  # noqa: F401
+    import app.devices.permissions  # noqa: F401
+    import app.services.hardening.permissions  # noqa: F401
+    import app.users.permissions  # noqa: F401
+    import app.vdoms.permissions  # noqa: F401
 
-    # --- DISPOSITIVOS (HARDWARE / CHASIS) ---
-    DEVICES_READ = "devices:read"
-    DEVICES_CREATE = "devices:create"
-    DEVICES_UPDATE = "devices:update"
-    DEVICES_DELETE = "devices:delete"
-    DEVICES_TEST_CONNECTION = "devices:test_connection"
 
-    # --- VDOMS (PARTICIONES LÓGICAS) ---
-    VDOMS_READ = "vdoms:read"
-    VDOMS_CREATE = "vdoms:create"
-    VDOMS_UPDATE = "vdoms:update"
-    VDOMS_DELETE = "vdoms:delete"
-    VDOMS_SYNC = "vdoms:sync"
+def get_all_system_permissions() -> Dict[str, str]:
+    """
+    Retorna la totalidad de permisos registrados dinámicamente en el sistema.
+    Si el registro está vacío (ej. fuera del ciclo HTTP de FastAPI), fuerza la carga del catálogo.
+    """
+    if not _REGISTERED_SYSTEM_PERMISSIONS:
+        load_all_domain_permissions()
+
+    return _REGISTERED_SYSTEM_PERMISSIONS.copy()

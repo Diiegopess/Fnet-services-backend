@@ -5,12 +5,14 @@ Controlador HTTP REST para VDOMs (Particiones Lógicas).
 import uuid
 from fastapi import APIRouter, Depends, Request, status
 
-from app.auth.api import require_permission
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
-from app.core.rbac.permissions import PermissionEnum
-
-from app.vdoms.dependencies import get_authorized_vdom_context, get_vdom_service
+from app.vdoms.dependencies import (
+    get_authorized_vdom_context,
+    get_vdom_service,
+    require_vdom_permission,
+)
+from app.vdoms.permissions import VDOMPermission
 from app.vdoms.schemas import (
     VDOMContext,
     VDOMCreate,
@@ -41,9 +43,7 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
 async def create_vdom(
     payload: VDOMCreate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(
-        require_permission(PermissionEnum.VDOMS_CREATE)
-    ),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.CREATE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -58,9 +58,7 @@ async def create_vdom(
 async def sync_vdoms(
     device_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(
-        require_permission(PermissionEnum.VDOMS_CREATE)
-    ),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.CREATE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -76,9 +74,7 @@ async def sync_vdoms(
 )
 async def list_vdoms_by_device(
     device_id: uuid.UUID,
-    current_user: AuthenticatedUser = Depends(
-        require_permission(PermissionEnum.VDOMS_READ)
-    ),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.READ)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     return await service.list_by_device(device_id)
@@ -106,9 +102,7 @@ async def update_vdom(
     vdom_id: uuid.UUID,
     payload: VDOMUpdate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(
-        require_permission(PermissionEnum.VDOMS_UPDATE)
-    ),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.UPDATE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -125,9 +119,7 @@ async def update_vdom(
 async def delete_vdom(
     vdom_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(
-        require_permission(PermissionEnum.VDOMS_DELETE)
-    ),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.DELETE)),
     service: VDOMService = Depends(get_vdom_service),
 ):
     metadata = _extract_metadata(request, current_user)

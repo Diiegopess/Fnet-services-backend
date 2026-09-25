@@ -1,49 +1,51 @@
-# app/users/seeder.py
 """
 Seeder del Dominio de Usuarios / RBAC.
 Maneja exclusivamente el ciclo de vida de usuarios, roles y permisos.
 """
 
-import logging
+logging = __import__("logging")
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.activity.permissions import ActivityPermission
+from app.clients.permissions import ClientPermission
 from app.core.config import settings
-from app.core.rbac.permissions import PermissionEnum
 from app.infrastructure.db.seeder_registry import SeederRegistry
 from app.users.models import Permission, Role, User
+from app.users.permissions import UserPermission
 
 logger = logging.getLogger(__name__)
 
-BASE_ROLES_PERMISSIONS: dict[str, list[PermissionEnum]] = {
+# Mapeo de roles a listas de strings de permisos
+BASE_ROLES_PERMISSIONS: dict[str, list[str]] = {
     "ADMIN": [
-        PermissionEnum.USERS_READ,
-        PermissionEnum.USERS_CREATE,
-        PermissionEnum.USERS_UPDATE,
-        PermissionEnum.USERS_DELETE,
-        PermissionEnum.USERS_ASSIGN_ROLE,
-        PermissionEnum.AUDIT_READ,
-        PermissionEnum.AUDIT_EXPORT,
-        PermissionEnum.CLIENTS_READ,
-        PermissionEnum.CLIENTS_CREATE,
-        PermissionEnum.CLIENTS_UPDATE,
-        PermissionEnum.CLIENTS_DELETE,
-        PermissionEnum.CLIENTS_ASSIGN_TECHNICIAN,
+        UserPermission.READ.value,
+        UserPermission.CREATE.value,
+        UserPermission.UPDATE.value,
+        UserPermission.DELETE.value,
+        UserPermission.ASSIGN_ROLE.value,
+        ActivityPermission.READ.value,
+        ActivityPermission.EXPORT.value,
+        ClientPermission.READ.value,
+        ClientPermission.CREATE.value,
+        ClientPermission.UPDATE.value,
+        ClientPermission.DELETE.value,
+        ClientPermission.ASSIGN_TECHNICIAN.value,
     ],
     "TECHNICIAN": [
-        PermissionEnum.USERS_READ,
-        PermissionEnum.CLIENTS_READ,
-        PermissionEnum.CLIENTS_UPDATE,
+        UserPermission.READ.value,
+        ClientPermission.READ.value,
+        ClientPermission.UPDATE.value,
     ],
     "AUDITOR": [
-        PermissionEnum.AUDIT_READ,
-        PermissionEnum.AUDIT_EXPORT,
-        PermissionEnum.USERS_READ,
-        PermissionEnum.CLIENTS_READ,
+        ActivityPermission.READ.value,
+        ActivityPermission.EXPORT.value,
+        UserPermission.READ.value,
+        ClientPermission.READ.value,
     ],
     "USER": [
-        PermissionEnum.USERS_READ,
-        PermissionEnum.CLIENTS_READ,
+        UserPermission.READ.value,
+        ClientPermission.READ.value,
     ],
 }
 
@@ -53,15 +55,18 @@ async def _seed_rbac(session) -> dict[str, Role]:
     res_perm = await session.execute(select(Permission))
     existing_perms = {p.code: p for p in res_perm.scalars().all()}
 
-    for perm_enum in PermissionEnum:
-        if perm_enum.value not in existing_perms:
+    # Recopilar todos los permisos definidos en los roles base
+    all_perm_codes = {perm for perms in BASE_ROLES_PERMISSIONS.values() for perm in perms}
+
+    for perm_code in all_perm_codes:
+        if perm_code not in existing_perms:
             perm = Permission(
-                code=perm_enum.value,
-                description=f"Permiso para la acción {perm_enum.value}",
+                code=perm_code,
+                description=f"Permiso para la acción {perm_code}",
             )
             session.add(perm)
-            existing_perms[perm_enum.value] = perm
-            logger.info(f"[SEED_USERS] Permiso creado: {perm_enum.value}")
+            existing_perms[perm_code] = perm
+            logger.info(f"[SEED_USERS] Permiso creado: {perm_code}")
 
     await session.flush()
 
@@ -71,11 +76,11 @@ async def _seed_rbac(session) -> dict[str, Role]:
     existing_roles = {r.name: r for r in res_role.scalars().all()}
 
     db_roles: dict[str, Role] = {}
-    for role_name, perm_enums in BASE_ROLES_PERMISSIONS.items():
+    for role_name, perm_codes in BASE_ROLES_PERMISSIONS.items():
         target_permissions = [
-            existing_perms[p.value]
-            for p in perm_enums
-            if p.value in existing_perms
+            existing_perms[p]
+            for p in perm_codes
+            if p in existing_perms
         ]
 
         if role_name not in existing_roles:

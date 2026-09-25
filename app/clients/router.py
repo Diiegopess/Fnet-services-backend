@@ -6,8 +6,10 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.auth.api import require_permission
-from app.clients.dependencies import get_client_service
+# Importar AMBAS dependencias desde dependencies.py
+from app.clients.dependencies import get_client_service, require_client_permission
+# Importar ÚNICAMENTE el Enum de permisos desde permissions.py
+from app.clients.permissions import ClientPermission
 from app.clients.schemas import (
     ClientCreate,
     ClientResponse,
@@ -17,7 +19,6 @@ from app.clients.schemas import (
 from app.clients.service import ClientService
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
-from app.core.rbac.permissions import PermissionEnum
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -35,12 +36,12 @@ def _extract_metadata(request: Request, user: AuthenticatedUser) -> EventMetadat
     "",
     response_model=ClientResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Registrar un nuevo cliente u organización",
+    summary="Registrar un nuevo cliente",
 )
 async def create_client(
     payload: ClientCreate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_CREATE)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.CREATE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -56,7 +57,7 @@ async def list_clients(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     is_active: Optional[bool] = Query(None),
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_READ)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.READ)),
     service: ClientService = Depends(get_client_service),
 ):
     return await service.get_multi(skip=skip, limit=limit, is_active=is_active)
@@ -69,7 +70,7 @@ async def list_clients(
 )
 async def get_client(
     client_id: uuid.UUID,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_READ)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.READ)),
     service: ClientService = Depends(get_client_service),
 ):
     return await service.get_by_id_or_fail(client_id)
@@ -84,7 +85,7 @@ async def update_client(
     client_id: uuid.UUID,
     payload: ClientUpdate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_UPDATE)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.UPDATE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -100,7 +101,7 @@ async def assign_technicians(
     client_id: uuid.UUID,
     payload: TechnicianAssignmentSchema,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_ASSIGN_TECHNICIAN)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.ASSIGN_TECHNICIAN)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -119,7 +120,7 @@ async def assign_technicians(
 async def delete_client(
     client_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.CLIENTS_DELETE)),
+    current_user: AuthenticatedUser = Depends(require_client_permission(ClientPermission.DELETE)),
     service: ClientService = Depends(get_client_service),
 ):
     metadata = _extract_metadata(request, current_user)

@@ -22,9 +22,9 @@ def upgrade() -> None:
     # 1. TABLAS INDEPENDIENTES (Sin Claves Foráneas)
     # =========================================================================
 
-    # 1.1 Audit Logs
+    # 1.1 Activity Logs (Formerly Audit Logs)
     op.create_table(
-        "audit_logs",
+        "activity_logs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("event_id", sa.String(length=255), nullable=True, comment="Identificador único del evento en el bus para trazabilidad e idempotencia"),
         sa.Column("event_type", sa.String(length=100), nullable=False),
@@ -34,10 +34,10 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
-    op.create_index(op.f("ix_audit_logs_event_id"), "audit_logs", ["event_id"], unique=False)
-    op.create_index(op.f("ix_audit_logs_event_type"), "audit_logs", ["event_type"], unique=False)
-    op.create_index(op.f("ix_audit_logs_user_id"), "audit_logs", ["user_id"], unique=False)
-    op.create_index(op.f("ix_audit_logs_created_at"), "audit_logs", ["created_at"], unique=False)
+    op.create_index(op.f("ix_activity_logs_event_id"), "activity_logs", ["event_id"], unique=False)
+    op.create_index(op.f("ix_activity_logs_event_type"), "activity_logs", ["event_type"], unique=False)
+    op.create_index(op.f("ix_activity_logs_user_id"), "activity_logs", ["user_id"], unique=False)
+    op.create_index(op.f("ix_activity_logs_created_at"), "activity_logs", ["created_at"], unique=False)
 
     # 1.2 Auth Credentials
     op.create_table(
@@ -261,7 +261,7 @@ def downgrade() -> None:
     op.drop_table("permissions")
     op.drop_table("clients")
     op.drop_table("auth_credentials")
-    op.drop_table("audit_logs")
+    op.drop_table("activity_logs")
 
     # Eliminación de Enum Types creados por PostgreSQL
     sa.Enum(name="findingstatus").drop(op.get_bind(), checkfirst=False)

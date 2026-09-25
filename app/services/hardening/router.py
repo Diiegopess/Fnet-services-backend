@@ -1,11 +1,12 @@
-# app/services/hardening/router.py
+"""
+Controlador HTTP REST para Auditoría de Hardening.
+"""
 
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from app.services.hardening.exporters import DOCXReportExporter, PDFReportExporter
 
-from app.auth.api import require_permission, get_current_user
+from app.auth.api import get_current_user
 from app.core.rbac.context import AuthenticatedUser
 from app.devices.api import DevicesAPI
 from app.infrastructure.integrations.exceptions import (
@@ -15,8 +16,11 @@ from app.infrastructure.integrations.exceptions import (
 from app.services.hardening.dependencies import (
     get_devices_api,
     get_hardening_service,
+    require_hardening_permission,
 )
 from app.services.hardening.exceptions import InvalidExecutionPayloadException
+from app.services.hardening.exporters import DOCXReportExporter, PDFReportExporter
+from app.services.hardening.permissions import HardeningPermission
 from app.services.hardening.schemas import (
     AuditExecutionRequest,
     AuditReportResponse,
@@ -32,12 +36,12 @@ router = APIRouter(prefix="/hardening", tags=["Hardening"])
     "/profiles",
     response_model=List[HardeningProfileResponse],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def list_profiles(
     standard_version: Optional[str] = Query(
         None, description="Filtrar por versión de estándar (ej. v1.0.0)"
     ),
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
     return await service.list_profiles(standard_version=standard_version)
@@ -47,10 +51,10 @@ async def list_profiles(
     "/profiles/{profile_id}",
     response_model=HardeningProfileResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def get_profile_by_id(
     profile_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
     profile = await service.get_profile_by_id(profile_id)
@@ -66,11 +70,10 @@ async def get_profile_by_id(
     "/audit",
     response_model=AuditReportResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("hardening:execute"))],
 )
 async def run_audit(
     payload: AuditExecutionRequest,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.EXECUTE)),
     service: HardeningService = Depends(get_hardening_service),
     devices_api: DevicesAPI = Depends(get_devices_api),
 ):
@@ -103,7 +106,7 @@ async def run_audit(
             raw_config=raw_config,
             profile_id=payload.profile_id,
             adhoc_rule_ids=getattr(payload, "adhoc_rule_ids", None),
-            standard_version=payload.standard_version,  # <-- Pasa la versión declarada al servicio
+            standard_version=payload.standard_version,
             vdom_id=getattr(payload, "vdom_id", None),
             executed_by=user_id,
         )
@@ -130,12 +133,12 @@ async def run_audit(
     "/reports",
     response_model=List[AuditReportResponse],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def list_audit_reports(
     device_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de dispositivo"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
     return await service.list_reports(device_id=device_id, limit=limit, offset=offset)
@@ -145,10 +148,10 @@ async def list_audit_reports(
     "/reports/{report_id}",
     response_model=AuditReportResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def get_audit_report_by_id(
     report_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
     report = await service.get_report_by_id(report_id)
@@ -159,15 +162,16 @@ async def get_audit_report_by_id(
         )
     return report
 
+
 @router.get(
     "/rules",
     response_model=List[RuleGroupResponse],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def list_available_rules(
     standard: Optional[str] = Query(None, description="Filtrar por estándar (ej. CIS)"),
     standard_version: Optional[str] = Query(None, description="Filtrar por versión (ej. v1.0.0)"),
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
     """Obtiene el catálogo maestro de reglas agrupadas para escaneos Ad-hoc desde la base de datos."""
@@ -177,16 +181,14 @@ async def list_available_rules(
 @router.get(
     "/reports/{report_id}/export",
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_permission("hardening:read"))],
 )
 async def export_audit_report(
     report_id: uuid.UUID,
     format: str = Query("pdf", pattern="^(pdf|docx)$", description="Formato del reporte (pdf o docx)"),
+    current_user: AuthenticatedUser = Depends(require_hardening_permission(HardeningPermission.READ)),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    """
-    Exporta un reporte de auditoría en formato PDF o DOCX.
-    """
+    """Exporta un reporte de auditoría en formato PDF o DOCX."""
     report = await service.get_report_by_id(report_id)
     if not report:
         raise HTTPException(

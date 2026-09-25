@@ -6,17 +6,22 @@ import uuid
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.api import ClientsAPI
-from app.infrastructure.db.database import get_db
-from app.core.events.interfaces import IEventPublisher
-from app.infrastructure.brokers.factory import get_event_publisher
-from app.core.rbac.context import AuthenticatedUser
-from app.core.rbac.permissions import PermissionEnum
 from app.auth.api import require_permission
+from app.clients.api import ClientsAPI
+from app.core.events.interfaces import IEventPublisher
+from app.core.rbac.context import AuthenticatedUser
+from app.infrastructure.brokers.factory import get_event_publisher
+from app.infrastructure.db.database import get_db
 from app.vdoms.exceptions import VDOMAccessDeniedError, VDOMNotFoundError
+from app.vdoms.permissions import VDOMPermission
 from app.vdoms.repository import VDOMRepository
 from app.vdoms.schemas import VDOMContext
 from app.vdoms.service import VDOMService
+
+
+def require_vdom_permission(permission: VDOMPermission):
+    """Dependency helper para validar permisos del dominio VDOMs."""
+    return require_permission(permission.value)
 
 
 def get_vdom_service(
@@ -30,7 +35,7 @@ def get_vdom_service(
 async def get_authorized_vdom_context(
     vdom_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.VDOMS_READ)),
+    current_user: AuthenticatedUser = Depends(require_vdom_permission(VDOMPermission.READ)),
 ) -> VDOMContext:
     """
     Resuelve e inyecta el VDOMContext validado.
@@ -38,7 +43,7 @@ async def get_authorized_vdom_context(
     Verifica que:
     1. El VDOM exista y esté activo.
     2. El usuario tenga acceso (Superusuarios acceden libremente; los técnicos
-       requieren asignación explicita al cliente dueño del VDOM).
+       requieren asignación explícita al cliente dueño del VDOM).
     """
     vdom_repo = VDOMRepository(db)
     vdom = await vdom_repo.get_by_id(vdom_id)
@@ -64,7 +69,7 @@ async def get_authorized_vdom_context(
     clients_api = ClientsAPI(db)
     has_access = await clients_api.is_technician_assigned(
         client_id=vdom.client_id,
-        user_id=current_user.id
+        user_id=current_user.id,
     )
 
     if not has_access:

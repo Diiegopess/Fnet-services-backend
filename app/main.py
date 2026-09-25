@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api_router import api_router
-from app.audit.subscribers import setup_audit_subscribers
+from app.activity.subscribers import setup_activity_subscribers
 from app.auth.subscribers import setup_auth_subscribers
 from app.core.config import settings
 from app.core.handlers import register_exception_handlers
@@ -21,21 +21,27 @@ from app.infrastructure.brokers.redis_consumer import RedisStreamConsumer
 from app.infrastructure.cache.redis import close_redis_pool
 from app.infrastructure.db.init_db import init_db
 from app.users.subscribers import setup_users_subscribers
+from app.core.rbac.permissions import load_all_domain_permissions
 
 
 def _register_domain_seeders() -> None:
     """Importa los módulos de seeder de los dominios para auto-registrarlos
-
-    en el SeederRegistry de Infraestructura antes de ejecutar la BD.
+    en el SeederRegistry de Infraestructura antes de ejecutar la BD, y asegura
+    la carga del catálogo completo de permisos en memoria.
     """
+    # Cargar matriz dinámica de permisos del Core
+    load_all_domain_permissions()
+
+    # Importación de seeders de los subdominios
     import app.auth.seeder  # noqa: F401
     import app.services.hardening.seeder  # noqa: F401
     import app.users.seeder  # noqa: F401
 
 
+
 def _register_event_subscribers() -> None:
     """Registra los manejadores de eventos en memoria de los módulos del sistema."""
-    setup_audit_subscribers()
+    setup_activity_subscribers()
     setup_auth_subscribers()
     setup_users_subscribers()
 

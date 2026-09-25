@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.db.database import Base
 
 
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

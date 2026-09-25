@@ -7,15 +7,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.api import require_permission
 from app.core.events.base import EventMetadata
 from app.core.events.interfaces import IEventPublisher
-from app.core.rbac.permissions import PermissionEnum
+from app.core.rbac.context import AuthenticatedUser
 from app.infrastructure.brokers.factory import get_event_publisher
 from app.infrastructure.db.database import get_db
 from app.users import service as user_service
-from app.users.dependencies import get_current_user_entity
+from app.users.dependencies import get_current_user_entity, require_user_permission
 from app.users.models import User
+from app.users.permissions import UserPermission
 from app.users.schemas import (
     RoleAssignSchema,
     RoleResponse,
@@ -28,7 +28,6 @@ from app.users.schemas import (
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-# --- Helper para extraer metadatos de auditoría ---
 def _build_metadata(request: Request, current_user: User) -> EventMetadata:
     return EventMetadata(
         actor_id=str(current_user.id),
@@ -44,11 +43,11 @@ def _build_metadata(request: Request, current_user: User) -> EventMetadata:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un usuario nuevo con roles",
-    dependencies=[Depends(require_permission(PermissionEnum.USERS_CREATE))],
 )
 async def admin_create_user(
     request: Request,
     user_in: UserCreateAdmin,
+    current_user_auth: AuthenticatedUser = Depends(require_user_permission(UserPermission.CREATE)),
     current_user: User = Depends(get_current_user_entity),
     publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
@@ -101,11 +100,11 @@ async def update_current_user(
     response_model=list[UserResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar usuarios",
-    dependencies=[Depends(require_permission(PermissionEnum.USERS_READ))],
 )
 async def list_users(
     skip: int = 0,
     limit: int = 50,
+    current_user: AuthenticatedUser = Depends(require_user_permission(UserPermission.READ)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     return await user_service.get_multi(db=db, skip=skip, limit=limit)
@@ -117,6 +116,7 @@ async def admin_update_user(
     request: Request,
     user_id: uuid.UUID,
     user_in: UserUpdateAdmin,
+    current_user_auth: AuthenticatedUser = Depends(require_user_permission(UserPermission.UPDATE)),
     current_user: User = Depends(get_current_user_entity),
     publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
@@ -138,6 +138,7 @@ async def assign_user_roles(
     request: Request,
     user_id: uuid.UUID,
     payload: RoleAssignSchema,
+    current_user_auth: AuthenticatedUser = Depends(require_user_permission(UserPermission.ASSIGN_ROLE)),
     current_user: User = Depends(get_current_user_entity),
     publisher: IEventPublisher = Depends(get_event_publisher),
     db: AsyncSession = Depends(get_db),
@@ -159,9 +160,9 @@ async def assign_user_roles(
     response_model=list[RoleResponse],
     status_code=status.HTTP_200_OK,
     summary="Listar catálogo de roles y permisos",
-    dependencies=[Depends(require_permission(PermissionEnum.USERS_READ))],
 )
 async def list_roles_catalog(
+    current_user: AuthenticatedUser = Depends(require_user_permission(UserPermission.READ)),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     return await user_service.list_roles(db=db)

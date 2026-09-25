@@ -15,7 +15,6 @@ from app.core.events.base import EventMetadata
 from app.core.events.interfaces import IEventPublisher
 from app.core.rbac.context import AuthenticatedUser
 from app.core.rbac.dependencies import PermissionChecker
-from app.core.rbac.permissions import PermissionEnum
 from app.core.security import decode_token
 from app.infrastructure.brokers.factory import get_event_publisher
 from app.infrastructure.db.database import get_db
@@ -82,8 +81,11 @@ async def get_current_user(
     return user_context
 
 
-def require_permission(*permissions: PermissionEnum | str) -> Callable[..., AuthenticatedUser]:
-    """Inyector de dependencia para endpoints protegidos por RBAC."""
+def require_permission(*permissions: str) -> Callable[..., AuthenticatedUser]:
+    """
+    Inyector de dependencia genérico para endpoints protegidos por RBAC.
+    Acepta cualquier string de permiso de dominio (ej. 'clients:read', 'auth:manage_sessions').
+    """
     checker = PermissionChecker(*permissions)
 
     async def dependency(

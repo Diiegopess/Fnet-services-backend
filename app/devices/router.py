@@ -6,11 +6,10 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.auth.api import require_permission
 from app.core.events.base import EventMetadata
 from app.core.rbac.context import AuthenticatedUser
-from app.core.rbac.permissions import PermissionEnum
-from app.devices.dependencies import get_device_service
+from app.devices.dependencies import get_device_service, require_device_permission
+from app.devices.permissions import DevicePermission
 from app.devices.schemas import (
     ConnectivityCheckResult,
     DeviceCreate,
@@ -54,7 +53,7 @@ async def get_supported_fortios_versions():
 )
 async def test_device_connection(
     payload: DeviceTestConnectionRequest,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_TEST_CONNECTION)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.TEST_CONNECTION)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.test_connectivity(
@@ -71,7 +70,7 @@ async def test_device_connection(
 )
 async def test_existing_device_connection(
     device_id: uuid.UUID,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_TEST_CONNECTION)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.TEST_CONNECTION)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.test_existing_device_connectivity(device_id)
@@ -86,7 +85,7 @@ async def list_devices(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     client_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de cliente"),
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_READ)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.READ)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.get_multi(skip=skip, limit=limit, client_id=client_id)
@@ -101,7 +100,7 @@ async def list_devices(
 async def create_device(
     payload: DeviceCreate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_CREATE)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.CREATE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -115,7 +114,7 @@ async def create_device(
 )
 async def get_device(
     device_id: uuid.UUID,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_READ)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.READ)),
     service: DeviceService = Depends(get_device_service),
 ):
     return await service.get_by_id_or_fail(device_id)
@@ -130,7 +129,7 @@ async def update_device(
     device_id: uuid.UUID,
     payload: DeviceUpdate,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_UPDATE)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.UPDATE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)
@@ -145,11 +144,8 @@ async def update_device(
 async def delete_device(
     device_id: uuid.UUID,
     request: Request,
-    current_user: AuthenticatedUser = Depends(require_permission(PermissionEnum.DEVICES_DELETE)),
+    current_user: AuthenticatedUser = Depends(require_device_permission(DevicePermission.DELETE)),
     service: DeviceService = Depends(get_device_service),
 ):
     metadata = _extract_metadata(request, current_user)
     await service.delete_device(device_id=device_id, metadata=metadata)
-
-
-    

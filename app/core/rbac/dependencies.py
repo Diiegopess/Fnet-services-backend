@@ -1,20 +1,21 @@
 """
 Lógica pura de validación de permisos RBAC en el Core.
-No contiene dependencias hacia ningún subdominio específico.
+Totalmente desacoplada de subdominios específicos.
 """
 
+from typing import Union
+from enum import Enum
 from fastapi import HTTPException, status
 
 from app.core.rbac.context import AuthenticatedUser
-from app.core.rbac.permissions import PermissionEnum
 
 
 class PermissionChecker:
-    """Verificador puro de permisos sobre el contexto de usuario."""
+    """Verificador puro eagnóstico de permisos sobre el contexto de usuario."""
 
-    def __init__(self, *required_permissions: PermissionEnum | str):
+    def __init__(self, *required_permissions: Union[Enum, str]):
         self.required_permissions: set[str] = {
-            p.value if isinstance(p, PermissionEnum) else p
+            p.value if isinstance(p, Enum) else str(p)
             for p in required_permissions
         }
 

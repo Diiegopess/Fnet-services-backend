@@ -5,13 +5,18 @@ Dependencias para el Dominio de Dispositivos.
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.api import require_permission
 from app.core.events.interfaces import IEventPublisher
+from app.devices.permissions import DevicePermission
 from app.devices.service import DeviceService
 from app.infrastructure.brokers.factory import get_event_publisher
 from app.infrastructure.db.database import get_db
-
-# Importación actualizada a la nueva ubicación del integrador
 from app.infrastructure.integrations.fortinet.prober import FortinetProber
+
+
+def require_device_permission(permission: DevicePermission):
+    """Dependency helper para validar permisos del dominio de dispositivos."""
+    return require_permission(permission.value)
 
 
 def get_device_prober() -> FortinetProber:

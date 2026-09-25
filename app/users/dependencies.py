@@ -5,11 +5,17 @@ Módulo de Dependencias para el Dominio de Usuarios.
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.api import get_current_user
+from app.auth.api import get_current_user, require_permission
 from app.core.rbac.context import AuthenticatedUser
 from app.infrastructure.db.database import get_db
 from app.users import service as user_service
 from app.users.models import User
+from app.users.permissions import UserPermission
+
+
+def require_user_permission(permission: UserPermission):
+    """Dependency helper para validar permisos del dominio de usuarios."""
+    return require_permission(permission.value)
 
 
 async def get_current_user_entity(

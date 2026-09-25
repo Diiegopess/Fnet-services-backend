@@ -1,5 +1,5 @@
 """
-Módulo de Controladores de Eventos (Event Handlers) del Dominio de Auditoría.
+Módulo de Controladores de Eventos (Event Handlers) del Dominio de Actividad (Activity Logs).
 """
 
 from datetime import datetime, timezone
@@ -7,16 +7,16 @@ import logging
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit import service as audit_service
-from app.audit.schemas import AuditLogCreate
+from app.activity import service as activity_service
+from app.activity.schemas import ActivityLogCreate
 from app.core.events.base import DomainEvent
 
 logger = logging.getLogger(__name__)
 
 
-async def handle_audit_event(event: DomainEvent, db: AsyncSession) -> None:
+async def handle_activity_event(event: DomainEvent, db: AsyncSession) -> None:
     """
-    Consume y procesa cualquier DomainEvent para registrarlo en audit_logs.
+    Consume y procesa cualquier DomainEvent para registrarlo en activity_logs.
     Prioriza el actor_id de metadata y usa payload.user_id como fallback.
     """
     user_id_raw = event.metadata.actor_id or event.payload.get("user_id")
@@ -39,7 +39,7 @@ async def handle_audit_event(event: DomainEvent, db: AsyncSession) -> None:
         "event_type": event.event_type,
         "user_id": user_uuid,
         "payload": event.payload,
-        "created_at": created_at_dt,  # <-- Sincronizado con Pydantic / DB
+        "created_at": created_at_dt,
     }
 
     if event.metadata.ip_address:
@@ -47,14 +47,14 @@ async def handle_audit_event(event: DomainEvent, db: AsyncSession) -> None:
     if event.metadata.user_agent:
         log_kwargs["user_agent"] = event.metadata.user_agent
 
-    log_in = AuditLogCreate(**log_kwargs)
+    log_in = ActivityLogCreate(**log_kwargs)
 
     try:
-        await audit_service.record_audit_log(db=db, log_in=log_in)
-        logger.info(f"[AUDIT_RECORDED] Evento {event.event_type} ({event.event_id}) auditado con éxito.")
+        await activity_service.record_activity_log(db=db, log_in=log_in)
+        logger.info(f"[ACTIVITY_RECORDED] Evento {event.event_type} ({event.event_id}) registrado con éxito.")
     except Exception as e:
         logger.error(
-            f"[AUDIT_RECORD_FAILED] Error al auditar evento {event.event_id}: {str(e)}",
+            f"[ACTIVITY_RECORD_FAILED] Error al registrar evento {event.event_id}: {str(e)}",
             exc_info=True,
         )
         raise e

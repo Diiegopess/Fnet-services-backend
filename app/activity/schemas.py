@@ -1,5 +1,5 @@
 """
-Módulo de Esquemas Pydantic v2 para el Dominio de Auditoría.
+Módulo de Esquemas Pydantic v2 para el Dominio de Actividad (Activity Logs).
 """
 
 from datetime import datetime, timezone
@@ -8,8 +8,8 @@ import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class AuditLogCreate(BaseModel):
-    """Esquema interno utilizado por los Event Handlers e Interfaces para insertar logs."""
+class ActivityLogCreate(BaseModel):
+    """Esquema interno utilizado por los Event Handlers e Interfaces para insertar logs de actividad."""
 
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     event_type: str
@@ -20,8 +20,8 @@ class AuditLogCreate(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class AuditLogResponse(BaseModel):
-    """Esquema público retornado en endpoints administrativos de auditoría."""
+class ActivityLogResponse(BaseModel):
+    """Esquema público retornado en endpoints administrativos de registro de actividad."""
 
     id: uuid.UUID
     event_id: str
@@ -32,7 +32,6 @@ class AuditLogResponse(BaseModel):
     payload: Dict[str, Any]
     created_at: datetime
 
-    # Si en algún momento añades 'correlation_id' a la BD, lo puedes desmarcar
     correlation_id: str | None = None  
 
     model_config = ConfigDict(from_attributes=True)
