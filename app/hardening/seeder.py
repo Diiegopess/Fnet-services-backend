@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.db.seeder_registry import SeederRegistry
-from app.services.hardening.models import HardeningProfile, ProfileType, RuleCatalog
-from app.services.hardening.repository import HardeningRepository
+from app.hardening.models import HardeningProfile, ProfileType, RuleCatalog
+from app.hardening.repository import HardeningRepository
 
 logger = logging.getLogger(__name__)
 

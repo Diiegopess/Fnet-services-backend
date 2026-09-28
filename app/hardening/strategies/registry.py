@@ -1,7 +1,7 @@
 from typing import Dict, List, Set, Tuple, Type
 
-from app.services.hardening.exceptions import RuleNotFoundException
-from app.services.hardening.strategies.base import BaseRule
+from app.hardening.exceptions import RuleNotFoundException
+from app.hardening.strategies.base import BaseRule
 
 
 class RuleRegistry:

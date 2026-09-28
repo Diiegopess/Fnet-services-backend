@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.services.hardening.models import (
+from app.hardening.models import (
     ExecutionType,
     FindingStatus,
     ProfileType,

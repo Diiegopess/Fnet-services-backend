@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.activity.permissions import ActivityPermission
+from app.auth.api import AuthAPI
 from app.clients.permissions import ClientPermission
 from app.core.config import settings
 from app.infrastructure.db.seeder_registry import SeederRegistry
@@ -110,7 +111,12 @@ async def _seed_superuser_profile(session, admin_role: Role | None) -> None:
         logger.info(f"[SEED_USERS] Perfil superusuario ya existe: {settings.FIRST_SUPERUSER_EMAIL}")
         return
 
+    # Usamos la fachada AuthAPI para consultar el ID de la credencial sin romper desacoplamiento
+    auth_api = AuthAPI(session)
+    auth_id = await auth_api.get_credential_id_by_email(settings.FIRST_SUPERUSER_EMAIL)
+
     user_profile = User(
+        id=auth_id,  # Asignamos el mismo UUID generado en auth
         email=settings.FIRST_SUPERUSER_EMAIL,
         full_name=settings.FIRST_SUPERUSER_FULL_NAME,
         is_active=True,
@@ -118,7 +124,7 @@ async def _seed_superuser_profile(session, admin_role: Role | None) -> None:
         roles=[admin_role] if admin_role else [],
     )
     session.add(user_profile)
-    logger.info(f"[SEED_USERS] Perfil superusuario creado: {settings.FIRST_SUPERUSER_EMAIL}")
+    logger.info(f"[SEED_USERS] Perfil superusuario creado (ID: {auth_id}): {settings.FIRST_SUPERUSER_EMAIL}")
 
 
 @SeederRegistry.register

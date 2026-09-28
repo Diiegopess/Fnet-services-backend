@@ -2,7 +2,7 @@ import io
 from docx import Document
 from docx.shared import Pt, RGBColor
 
-from app.services.hardening.models import AuditReport
+from app.hardening.models import AuditReport
 from .base import BaseReportExporter
 
 

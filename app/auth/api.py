@@ -57,3 +57,8 @@ class AuthAPI:
             is_email_verified=is_email_verified,
         )
         return cred.id
+
+    async def get_credential_id_by_email(self, email: str) -> uuid.UUID | None:
+        """Obtiene el ID de la credencial asociada al email sin expone el modelo ORM."""
+        cred = await self.repo.get_by_email(email)
+        return cred.id if cred else None

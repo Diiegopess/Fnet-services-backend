@@ -9,7 +9,7 @@ from app.activity.router import router as activity_router
 from app.clients.router import router as clients_router
 from app.devices.router import router as devices_router
 from app.vdoms.router import router as vdoms_router
-from app.services.hardening.router import router as hardening_router
+from app.hardening.router import router as hardening_router
 
 api_router = APIRouter()
 

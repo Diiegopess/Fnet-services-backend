@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from app.services.hardening.models import AuditReport
+from app.hardening.models import AuditReport
 
 
 class BaseReportExporter(ABC):

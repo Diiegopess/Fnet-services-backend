@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.services.hardening.exceptions import ProfileNotFoundException
-from app.services.hardening.models import (
+from app.hardening.exceptions import ProfileNotFoundException
+from app.hardening.models import (
     AuditFinding,
     AuditReport,
     ExecutionType,

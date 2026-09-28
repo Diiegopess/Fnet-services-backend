@@ -2,9 +2,9 @@
 
 import json
 from typing import Any, Dict, List, Optional
-from app.services.hardening.engine.operators import OperatorRegistry
-from app.services.hardening.models import FindingStatus, RuleSeverity
-from app.services.hardening.strategies.base import RuleResult
+from app.hardening.engine.operators import OperatorRegistry
+from app.hardening.models import FindingStatus, RuleSeverity
+from app.hardening.strategies.base import RuleResult
 
 
 class DeclarativeRuleEngine:

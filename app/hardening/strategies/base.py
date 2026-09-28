@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.services.hardening.models import FindingStatus, RuleSeverity
+from app.hardening.models import FindingStatus, RuleSeverity
 
 
 @dataclass

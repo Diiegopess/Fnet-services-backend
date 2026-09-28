@@ -21,12 +21,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
     try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8")
-        )
-    except (ValueError, TypeError):
-        # Si el hash está corrupto o malformado, retornamos False en lugar de tirar un error 500
+        # Aseguramos el formato de bytes para bcrypt
+        password_bytes = plain_password.encode("utf-8")
+        hash_bytes = hashed_password.encode("utf-8")
+        
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception as e:
+        # En entornos de desarrollo es recomendable loguear la excepción para depuración
         return False
 
 

@@ -9,9 +9,9 @@ from app.auth.api import require_permission
 from app.devices.api import DevicesAPI
 from app.infrastructure.db.database import get_db
 from app.infrastructure.integrations.fortinet.fetcher import FortinetConfigFetcher
-from app.services.hardening.permissions import HardeningPermission
-from app.services.hardening.repository import HardeningRepository
-from app.services.hardening.service import HardeningService
+from app.hardening.permissions import HardeningPermission
+from app.hardening.repository import HardeningRepository
+from app.hardening.service import HardeningService
 
 
 def require_hardening_permission(permission: HardeningPermission):

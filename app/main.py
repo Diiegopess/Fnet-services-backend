@@ -34,7 +34,7 @@ def _register_domain_seeders() -> None:
 
     # Importación de seeders de los subdominios
     import app.auth.seeder  # noqa: F401
-    import app.services.hardening.seeder  # noqa: F401
+    import app.hardening.seeder  # noqa: F401
     import app.users.seeder  # noqa: F401
 
 

@@ -13,21 +13,21 @@ from app.infrastructure.integrations.exceptions import (
     IntegrationConnectionError,
     IntegrationHTTPError,
 )
-from app.services.hardening.dependencies import (
+from app.hardening.dependencies import (
     get_devices_api,
     get_hardening_service,
     require_hardening_permission,
 )
-from app.services.hardening.exceptions import InvalidExecutionPayloadException
-from app.services.hardening.exporters import DOCXReportExporter, PDFReportExporter
-from app.services.hardening.permissions import HardeningPermission
-from app.services.hardening.schemas import (
+from app.hardening.exceptions import InvalidExecutionPayloadException
+from app.hardening.exporters import DOCXReportExporter, PDFReportExporter
+from app.hardening.permissions import HardeningPermission
+from app.hardening.schemas import (
     AuditExecutionRequest,
     AuditReportResponse,
     HardeningProfileResponse,
     RuleGroupResponse,
 )
-from app.services.hardening.service import HardeningService
+from app.hardening.service import HardeningService
 
 router = APIRouter(prefix="/hardening", tags=["Hardening"])
 

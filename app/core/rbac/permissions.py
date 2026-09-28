@@ -27,7 +27,7 @@ def load_all_domain_permissions() -> None:
     import app.auth.permissions  # noqa: F401
     import app.clients.permissions  # noqa: F401
     import app.devices.permissions  # noqa: F401
-    import app.services.hardening.permissions  # noqa: F401
+    import app.hardening.permissions  # noqa: F401
     import app.users.permissions  # noqa: F401
     import app.vdoms.permissions  # noqa: F401
 

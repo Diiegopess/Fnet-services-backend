@@ -101,6 +101,18 @@ class AuthService:
         result = await self.db.execute(stmt)
         account = result.scalar_one_or_none()
 
+        # --- LOGS DE DEPURACIÓN EN CONSOLA ---
+        print("\n================ [DEBUG LOGIN] ================")
+        print(f"--> Email recibido en request: '{email}'")
+        if account:
+            print(f"--> Usuario encontrado en BD: ID={account.id}, Email={account.email}")
+            print(f"--> Hash en BD: {account.password_hash}")
+            is_valid = verify_password(password, account.password_hash) if account.password_hash else False
+            print(f"--> Verificación de contraseña: {is_valid}")
+        else:
+            print("--> ❌ NO se encontró ningún usuario en BD con ese email.")
+        print("================================================\n")
+
         if not account or not account.password_hash or not verify_password(password, account.password_hash):
             failed_event = DomainEvent(
                 event_type="auth.login_failed",

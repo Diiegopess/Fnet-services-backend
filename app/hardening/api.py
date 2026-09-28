@@ -4,9 +4,9 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.hardening.models import AuditReport, ExecutionType
-from app.services.hardening.repository import HardeningRepository
-from app.services.hardening.service import HardeningService
+from app.hardening.models import AuditReport, ExecutionType
+from app.hardening.repository import HardeningRepository
+from app.hardening.service import HardeningService
 
 
 class HardeningAPI:

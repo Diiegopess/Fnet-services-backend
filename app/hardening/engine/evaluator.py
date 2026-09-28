@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Union
 
-from app.services.hardening.engine.declarative import DeclarativeRuleEngine
-from app.services.hardening.models import FindingStatus, RuleCatalog, RuleSeverity
-from app.services.hardening.strategies.base import RuleResult
+from app.hardening.engine.declarative import DeclarativeRuleEngine
+from app.hardening.models import FindingStatus, RuleCatalog, RuleSeverity
+from app.hardening.strategies.base import RuleResult
 
 
 @dataclass

@@ -3,10 +3,10 @@
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
-from app.services.hardening.engine.evaluator import HardeningEvaluator
-from app.services.hardening.exceptions import InvalidExecutionPayloadException
-from app.services.hardening.models import AuditReport, ExecutionType, HardeningProfile
-from app.services.hardening.repository import HardeningRepository
+from app.hardening.engine.evaluator import HardeningEvaluator
+from app.hardening.exceptions import InvalidExecutionPayloadException
+from app.hardening.models import AuditReport, ExecutionType, HardeningProfile
+from app.hardening.repository import HardeningRepository
 
 
 class HardeningService:

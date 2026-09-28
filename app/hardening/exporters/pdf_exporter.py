@@ -5,7 +5,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.services.hardening.models import AuditReport
+from app.hardening.models import AuditReport
 from .base import BaseReportExporter
 
 
