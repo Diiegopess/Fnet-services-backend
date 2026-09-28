@@ -18,142 +18,106 @@ logger = logging.getLogger(__name__)
 
 @SeederRegistry.register
 async def seed_hardening_data(session: AsyncSession) -> None:
-    """Seeder desacoplado: lee benchmarks en JSON de forma recursiva,
-
-    sincroniza RuleCatalog y actualiza perfiles SYSTEM alineados por versión.
+    """Seeder declarativo: Lee manifiestos de benchmarks en JSON,
+    sincroniza el catálogo de reglas y actualiza/crea perfiles de sistema.
     """
     repository = HardeningRepository(session)
 
-    # 1. Localizar la carpeta de benchmarks JSON
     benchmarks_dir = Path(__file__).resolve().parent / "benchmarks"
     if not benchmarks_dir.exists():
         logger.warning(f"--> [HARDENING SEEDER] No existe el directorio de benchmarks: {benchmarks_dir}")
         return
 
-    # rglob permite leer recursivamente archivos en subdirectorios (ej: benchmarks/cis_v1.0.1/*.json)
     json_files = sorted(list(benchmarks_dir.rglob("*.json")))
     if not json_files:
-        logger.warning(f"--> [HARDENING SEEDER] No se encontraron archivos .json en: {benchmarks_dir}")
+        logger.warning(f"--> [HARDENING SEEDER] No se encontraron archivos JSON en: {benchmarks_dir}")
         return
 
-    # 2. Leer y construir el payload de reglas desde todos los archivos JSON
-    rules_payload = []
+    # Iterar por cada manifiesto de Benchmark
     for file_path in json_files:
-        logger.info(f"--> [HARDENING SEEDER] Leyendo especificaciones desde: {file_path.relative_to(benchmarks_dir)}")
+        logger.info(f"--> [HARDENING SEEDER] Procesando manifiesto: {file_path.name}")
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                benchmark = json.load(f)
 
-            if isinstance(data, list):
-                for rule_entry in data:
-                    rule_id = rule_entry.get("id")
-                    if not rule_id:
-                        logger.warning(f"--> [HARDENING SEEDER] Entrada ignorada por falta de 'id' en {file_path.name}")
-                        continue
+            # Validar campos raíz obligatorios
+            standard = benchmark.get("standard")
+            version = benchmark.get("standard_version")
+            raw_rules = benchmark.get("rules", [])
 
-                    # Extraer rule_spec completo
-                    rule_spec = rule_entry.get("rule_spec", {})
-                    required_endpoint = (
-                        rule_spec.get("required_endpoint") 
-                        or rule_entry.get("required_endpoint", "")
+            if not standard or not version or not isinstance(raw_rules, list):
+                logger.warning(f"--> [HARDENING SEEDER] Estructura inválida en {file_path.name}. Omite proceso.")
+                continue
+
+            rules_payload = []
+            rule_keys = []
+
+            for rule_entry in raw_rules:
+                rule_id = rule_entry.get("id")
+                if not rule_id:
+                    continue
+
+                rule_spec = rule_entry.get("rule_spec", {})
+                req_endpoint = rule_entry.get("required_endpoint") or rule_spec.get("required_endpoint", "")
+
+                rules_payload.append({
+                    "id": str(rule_id),
+                    "standard_version": version,
+                    "name": rule_entry.get("name", rule_id),
+                    "description": rule_entry.get("description"),
+                    "category": rule_entry.get("category", "General"),
+                    "standard": standard,
+                    "default_severity": rule_entry.get("default_severity", "MEDIUM"),
+                    "required_endpoint": req_endpoint,
+                    "rule_spec": rule_spec,
+                    "is_active": rule_entry.get("is_active", True),
+                })
+                rule_keys.append((str(rule_id), version))
+
+            if not rules_payload:
+                continue
+
+            # 1. Sincronizar Reglas en RuleCatalog
+            await repository.sync_rule_catalog(rules_payload)
+
+            # 2. Cargar las entidades RuleCatalog guardadas para mapear relaciones N:M
+            rules_stmt = select(RuleCatalog).where(
+                RuleCatalog.id.in_([k[0] for k in rule_keys]),
+                RuleCatalog.standard_version == version
+            )
+            saved_rules = list((await session.execute(rules_stmt)).scalars().all())
+
+            # 3. Sincronizar / Crear el Perfil de Sistema (SYSTEM)
+            profile_name = benchmark.get("title", f"Perfil Base {standard} {version}")
+            is_system_profile = benchmark.get("is_system_profile", True)
+
+            if is_system_profile:
+                stmt = select(HardeningProfile).options(
+                    selectinload(HardeningProfile.rules)
+                ).where(
+                    HardeningProfile.name == profile_name,
+                    HardeningProfile.profile_type == ProfileType.SYSTEM
+                )
+                profile = (await session.execute(stmt)).scalar_one_or_none()
+
+                if not profile:
+                    profile = HardeningProfile(
+                        id=uuid4(),
+                        name=profile_name,
+                        description=benchmark.get("description"),
+                        standard_version=version,
+                        profile_type=ProfileType.SYSTEM,
+                        is_active=True,
+                        rules=saved_rules,
                     )
+                    session.add(profile)
+                    logger.info(f"--> [HARDENING SEEDER] Perfil de sistema creado: '{profile_name}'")
+                else:
+                    profile.standard_version = version
+                    profile.rules = saved_rules
+                    logger.info(f"--> [HARDENING SEEDER] Perfil de sistema actualizado: '{profile_name}'")
 
-                    rules_payload.append({
-                        "id": str(rule_id),
-                        "name": rule_entry.get("name", rule_id),
-                        "description": rule_entry.get("description"),
-                        "category": rule_entry.get("category", "General"),
-                        "standard": rule_entry.get("standard", "CIS"),
-                        "standard_version": rule_entry.get("standard_version", "v1.0.1"),
-                        "default_severity": rule_entry.get("default_severity", "MEDIUM"),
-                        "required_endpoint": required_endpoint,
-                        "rule_spec": rule_spec,
-                        "is_active": rule_entry.get("is_active", True),
-                    })
+            await session.commit()
+
         except Exception as e:
-            logger.error(f"--> [HARDENING SEEDER] Error al parsear {file_path.name}: {e}")
-
-    if not rules_payload:
-        logger.warning("--> [HARDENING SEEDER] No se construyó ningún payload válido de reglas desde los JSON.")
-        return
-
-    # 3. Sincronizar las reglas híbridas (metadatos + JSONB) en la BD
-    logger.info(f"--> [HARDENING SEEDER] Sincronizando {len(rules_payload)} reglas con la BD...")
-    await repository.sync_rule_catalog(rules_payload)
-
-    # 4. Obtener todas las reglas activas actualizadas desde la BD
-    rules_stmt = select(RuleCatalog).where(RuleCatalog.is_active.is_(True))
-    all_rules_result = await session.execute(rules_stmt)
-    catalog_rules = list(all_rules_result.scalars().all())
-
-    # 5. Sincronizar / Asignar reglas a los Perfiles de Sistema (SYSTEM)
-    stmt = select(HardeningProfile).options(selectinload(HardeningProfile.rules)).where(
-        HardeningProfile.profile_type == ProfileType.SYSTEM
-    )
-    result = await session.execute(stmt)
-    system_profiles = result.scalars().all()
-
-    target_standard_version = "v1.0.1"
-
-    if not system_profiles:
-        logger.info(f"--> [HARDENING SEEDER] Creando perfil base inicial CIS Benchmark ({target_standard_version})...")
-        cis_rules = [
-            r for r in catalog_rules 
-            if r.standard == "CIS" and getattr(r, "standard_version", None) == target_standard_version
-        ]
-
-        default_profile = HardeningProfile(
-            id=uuid4(),
-            name="Perfil Base CIS",
-            description=f"Plantilla predeterminada del estándar CIS Benchmark {target_standard_version}.",
-            standard_version=target_standard_version,
-            profile_type=ProfileType.SYSTEM,
-            is_active=True,
-            rules=cis_rules,
-        )
-
-        session.add(default_profile)
-        await session.commit()
-        logger.info("--> [HARDENING SEEDER] Perfil base creado con éxito.")
-    else:
-        logger.info("--> [HARDENING SEEDER] Actualizando reglas asociadas a los perfiles de sistema...")
-        for profile in system_profiles:
-            profile_name_upper = profile.name.upper()
-            prof_version = getattr(profile, "standard_version", target_standard_version)
-
-            if "CIS" in profile_name_upper:
-                profile.standard_version = prof_version
-                profile.rules = [
-                    r for r in catalog_rules 
-                    if r.standard == "CIS" and getattr(r, "standard_version", None) == prof_version
-                ]
-            elif "GAMMA" in profile_name_upper:
-                profile.rules = [r for r in catalog_rules if r.standard == "GAMMA"]
-            elif "FORTINET" in profile_name_upper:
-                fortinet_rules = [
-                    r for r in catalog_rules
-                    if r.standard in ("FORTINET", "FORTINET_BP", "FORTI")
-                ]
-                profile.rules = fortinet_rules
-                versions = {r.standard_version for r in fortinet_rules}
-                if len(versions) == 1:
-                    profile.standard_version = versions.pop()
-
-        await session.commit()
-        logger.info("--> [HARDENING SEEDER] Perfiles actualizados exitosamente con sus reglas correspondientes.")
-
-
-# --- BLOQUE DE EJECUCIÓN MANUAL DIRECTA ---
-if __name__ == "__main__":
-    import asyncio
-    from app.infrastructure.db.database import AsyncSessionLocal
-
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    async def main():
-        print("\n>>> INICIANDO SEEDER DECLARATIVO MANUALMENTE...")
-        async with AsyncSessionLocal() as session:
-            await seed_hardening_data(session)
-        print(">>> FINALIZADO CON ÉXITO.\n")
-
-    asyncio.run(main())
+            logger.error(f"--> [HARDENING SEEDER] Error al procesar {file_path.name}: {e}")
