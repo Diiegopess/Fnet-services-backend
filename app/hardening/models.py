@@ -36,7 +36,7 @@ class ExecutionType(str, enum.Enum):
 
 class FindingStatus(str, enum.Enum):
     PASSED = "PASSED"
-    PARCIAL = "PARCIAL"
+    PARTIAL = "PARTIAL"
     FAILED = "FAILED"
     NOT_APPLICABLE = "NOT_APPLICABLE"
 

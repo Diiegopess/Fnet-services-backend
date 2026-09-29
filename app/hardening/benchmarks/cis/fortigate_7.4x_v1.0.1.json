@@ -946,9 +946,11 @@
         "checks": [
           {
             "operator": "not_both_contain",
-            "field_a": "srcaddr",
-            "field_b": "dstaddr",
-            "target_value": "all",
+            "expected": {
+              "field_a": "srcaddr",
+              "field_b": "dstaddr",
+              "target_value": "all"
+            },
             "description": "Las políticas de aceptación activas no deben usar 'all' como origen y destino al mismo tiempo"
           }
         ],
@@ -1028,7 +1030,6 @@
           {
             "field": "service",
             "operator": "nested_property_not_in",
-            "property": "name",
             "forbidden": [
               "ALL",
               "all"
@@ -1563,7 +1564,7 @@
             "description": "El clúster HA cuenta con una contraseña de autenticación configurada"
           }
         ],
-        "remediation_cmd": "config system ha\n  set password <CONTRASEÃ‘A_ROBUSTA_HA>\nend"
+        "remediation_cmd": "config system ha\n  set password <CONTRASEÑA_ROBUSTA_HA>\nend"
       }
     },
     {
@@ -1628,5 +1629,5 @@
         "remediation_cmd": "config vpn ipsec phase1-interface\n  edit \"<nombre_tunel>\"\n    set proposal aes256-sha256 aes128-sha256\n  next\nend"
       }
     }
-]
+  ]
 }

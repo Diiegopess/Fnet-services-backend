@@ -1,5 +1,3 @@
-# app/services/hardening/engine/operators.py
-
 import re
 from typing import Any, List, Set, Union
 
@@ -54,27 +52,27 @@ class OperatorRegistry:
 
     @staticmethod
     def in_list(actual: Any, expected_list: List[Any]) -> bool:
-        if actual is None:
+        if actual is None or not isinstance(expected_list, list):
             return False
-        normalized_list = [str(x).strip().lower() for x in expected_list]
+        normalized_list = [str(x).strip().lower() for x in expected_list if x is not None]
         return str(actual).strip().lower() in normalized_list
 
     @staticmethod
     def not_in(actual: Any, forbidden_list: List[Any]) -> bool:
-        if actual is None:
-            return False
-        normalized_list = [
-            str(x).strip().lower() if x is not None else None for x in forbidden_list
-        ]
+        if actual is None or str(actual).strip() == "":
+            return False  # Un valor ausente no puede pasar la validación
+        if not isinstance(forbidden_list, list):
+            return True
+
+        normalized_list = {
+            str(x).strip().lower() for x in forbidden_list if x is not None
+        }
         normalized_actual = str(actual).strip().lower()
         return normalized_actual not in normalized_list
 
     @staticmethod
     def disjoint_tokens(actual: Union[str, List[str]], forbidden_tokens: List[str]) -> bool:
-        """Verifica que ningún token prohibido esté presente en la cadena o lista actual.
-        
-        Útil para campos tipo FortiOS 'allowaccess: ping https ssh'.
-        """
+        """Verifica que ningún token prohibido esté presente en la cadena o lista actual."""
         if not actual:
             return True
 
@@ -83,14 +81,14 @@ class OperatorRegistry:
         else:
             actual_set = {str(x).lower().strip() for x in actual}
 
-        forbidden_set: Set[str] = {str(x).lower().strip() for x in forbidden_tokens}
+        forbidden_set: Set[str] = {str(x).lower().strip() for x in forbidden_tokens if x is not None}
         return len(actual_set.intersection(forbidden_set)) == 0
 
     @staticmethod
     def contains_token(actual: Union[str, List[str]], expected: str) -> bool:
         if not actual:
             return False
-        tokens = actual.lower().split() if isinstance(actual, str) else [str(x).lower() for x in actual]
+        tokens = actual.lower().split() if isinstance(actual, str) else [str(x).lower().strip() for x in actual]
         return str(expected).lower().strip() in tokens
 
     @staticmethod
@@ -112,6 +110,7 @@ class OperatorRegistry:
         if not isinstance(actual, dict) or not isinstance(expected, dict):
             return False
         target = str(expected.get("target_value", "")).lower()
+
         def contains_token(value: Any) -> bool:
             if isinstance(value, list):
                 return any(contains_token(item) for item in value)
@@ -130,7 +129,10 @@ class OperatorRegistry:
             return False
         return any(
             isinstance(item, dict)
-            and all(item.get(key) == value for key, value in expected.items())
+            and all(
+                str(item.get(key, "")).strip().lower() == str(value).strip().lower()
+                for key, value in expected.items()
+            )
             for item in actual
         )
 
@@ -138,9 +140,9 @@ class OperatorRegistry:
     def nested_property_not_in(actual: Any, forbidden: List[Any]) -> bool:
         if not isinstance(actual, list):
             return True
-        forbidden_values = {str(value).lower() for value in forbidden}
+        forbidden_values = {str(value).lower().strip() for value in forbidden if value is not None}
         return all(
-            not isinstance(item, dict) or str(item.get("name", "")).lower() not in forbidden_values
+            not isinstance(item, dict) or str(item.get("name", "")).lower().strip() not in forbidden_values
             for item in actual
         )
 
