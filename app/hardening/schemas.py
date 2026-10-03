@@ -117,3 +117,49 @@ class AuditReportResponse(BaseModel):
                 self.total_passed + self.total_failed + self.total_not_applicable
             )
         return self
+
+    # --- SCHEMAS DE AUDITORÍA DESDE ARCHIVO DE BACKUP (OFFLINE) ---
+
+class BackupFindingResponse(BaseModel):
+    """Hallazgo individual evaluado en memoria a partir del backup."""
+    rule_id: str
+    standard_version: str = "v1.0.0"
+    status: FindingStatus
+    compliance_score: float = Field(0.0, description="Porcentaje de cumplimiento de la regla (0.0 a 100.0).")
+    severity: RuleSeverity
+    current_value: Optional[str] = None
+    expected_value: Optional[str] = None
+    remediation_cmd: Optional[str] = None
+
+
+class BackupDeviceInfo(BaseModel):
+    """Metadatos extraídos de la cabecera (#config-version) del archivo de backup."""
+    model: str = "FortiGate"
+    firmware_version: str = "Desconocida"
+    build: Optional[str] = None
+    vdom_enabled: bool = False
+
+
+class BackupAuditResponse(BaseModel):
+    """Respuesta completa del escaneo offline para renderizar directamente en el frontend."""
+    device_info: BackupDeviceInfo
+    score: float = Field(0.0, description="Porcentaje total de cumplimiento del backup.")
+    
+    total_passed: int = 0
+    total_partial: int = 0
+    total_failed: int = 0
+    total_not_applicable: int = 0
+    total_rules_evaluated: int = 0
+
+    findings: List[BackupFindingResponse] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def compute_total_rules(self) -> "BackupAuditResponse":
+        if self.total_rules_evaluated == 0:
+            self.total_rules_evaluated = (
+                self.total_passed
+                + self.total_partial
+                + self.total_failed
+                + self.total_not_applicable
+            )
+        return self

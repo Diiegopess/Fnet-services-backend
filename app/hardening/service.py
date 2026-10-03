@@ -7,6 +7,7 @@ from app.hardening.engine.evaluator import HardeningEvaluator
 from app.hardening.exceptions import InvalidExecutionPayloadException
 from app.hardening.models import AuditReport, ExecutionType, HardeningProfile
 from app.hardening.repository import HardeningRepository
+from app.hardening.parsers.fortios_conf_parser import FortiOSConfParser
 
 
 class HardeningService:
@@ -190,3 +191,74 @@ class HardeningService:
             {"category": cat_name, "count": len(items), "rules": items}
             for cat_name, items in grouped.items()
         ]
+
+    # --- AUDITORÍA DE ARCHIVO DE BACKUP (OFFLINE) ---
+
+    async def evaluate_backup_file(
+        self,
+        file_content: str,
+        profile_id: Optional[UUID] = None,
+        standard_version: Optional[str] = None,
+        adhoc_rule_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evalúa un archivo .conf en memoria contra el catálogo de reglas seleccionado,
+        devolviendo el resultado formateado para el frontend sin persistir en BD ni
+        requerir conexión de red.
+        """
+        # 1. Determinar el catálogo de reglas a evaluar
+        if profile_id:
+            profile = await self.repository.get_profile_by_id(profile_id)
+            if not profile:
+                raise InvalidExecutionPayloadException(
+                    "El perfil de hardening seleccionado no existe."
+                )
+            rules_to_run = [r for r in profile.rules if getattr(r, "is_active", True)]
+        elif adhoc_rule_ids:
+            rules_to_run = await self.repository.get_rules_by_ids(
+                rule_ids=adhoc_rule_ids, standard_version=standard_version
+            )
+        else:
+            # Evaluación completa por estándar si no se especificó un perfil o conjunto ad-hoc
+            rules_to_run = await self.repository.get_all_active_rules(
+                standard_version=standard_version
+            )
+
+        if not rules_to_run:
+            raise InvalidExecutionPayloadException(
+                "No se encontraron reglas activas para evaluar contra este archivo de backup."
+            )
+
+        # 2. Parsear el archivo .conf de FortiOS a la estructura CMDB esperada
+        parser = FortiOSConfParser()
+        parse_result = parser.parse(file_content)
+
+        if not parse_result.cmdb_dump:
+            raise InvalidExecutionPayloadException(
+                "No se pudieron extraer secciones de configuración analizables del archivo de backup."
+            )
+
+        # 3. Ejecución directa sobre el motor declarativo existente
+        summary = self.evaluator.evaluate_rules(
+            rules=rules_to_run,
+            parsed_config=parse_result.cmdb_dump,
+        )
+
+        # 4. Retornar payload compatible con el schema BackupAuditResponse
+        return {
+            "device_info": {
+                "model": parse_result.metadata.model or "FortiGate",
+                "firmware_version": parse_result.metadata.version or "Desconocida",
+                "build": parse_result.metadata.build,
+                "vdom_enabled": parse_result.metadata.vdom_enabled,
+            },
+            "score": summary.score,
+            "total_passed": summary.total_passed,
+            "total_partial": summary.total_partial,
+            "total_failed": summary.total_failed,
+            "total_not_applicable": summary.total_not_applicable,
+            "findings": summary.findings,
+        }
+
+    
+    
