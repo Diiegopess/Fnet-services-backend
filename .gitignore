@@ -1,5 +1,6 @@
 # --- ARCHIVOS DE CONTROL Y NOTAS ---
 construccion.txt
+schema.sql
 
 # --- VARIABLES DE ENTORNO Y SECRETOS (CRÍTICO) ---
 .env

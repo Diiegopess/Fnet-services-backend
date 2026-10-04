@@ -1,10 +1,9 @@
-version: "3.8"
 
 services:
   # --- SERVICIO 1: Base de Datos PostgreSQL ---
   postgres:
     image: postgres:16-alpine
-    container_name: fnet_services_postgres
+    container_name: fnet_services_db
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -25,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: fnet_services_redis
     restart: always
-    command: redis-server --appendonly yes  # Persistencia AOF para eventos en Redis Streams
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -51,14 +50,14 @@ services:
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-fnet_services_db}"
       REDIS_URL: "redis://redis:6379/0"
     volumes:
-      - ./app:/app/app  # Recarga en vivo al modificar código local
+      - ./app:/app/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  # --- SERVICIO 4: FortiGate Mock (Simulador de Hardware para Tests) ---
+  # --- SERVICIO 4: FortiGate Mock ---
   fortigate-mock:
     build:
       context: ./tests/mock/fortigate

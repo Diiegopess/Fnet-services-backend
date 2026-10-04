@@ -1,10 +1,14 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from typing import TYPE_CHECKING
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.database import Base
+
+if TYPE_CHECKING:
+    from app.users.models import User
 
 
 class AuthCredential(Base):
@@ -12,8 +16,8 @@ class AuthCredential(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),  # 👈 1:1 estricto con users
         primary_key=True,
-        default=uuid.uuid4,
     )
 
     email: Mapped[str] = mapped_column(
@@ -51,3 +55,6 @@ class AuthCredential(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    # Relación inversa hacia User
+    user: Mapped["User"] = relationship("User", back_populates="credentials")

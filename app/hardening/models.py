@@ -138,7 +138,13 @@ class AuditReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    
+    # Campo opcional para soportar análisis de archivos de backup offline
+    # Si la auditoría proviene de un archivo subido, device_id se guarda como None/NULL
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
     vdom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     execution_type: Mapped[ExecutionType] = mapped_column(
@@ -156,13 +162,23 @@ class AuditReport(Base):
     total_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_not_applicable: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    executed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Vinculación formal con el usuario técnico que ejecutó o subió la auditoría
+    executed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     findings: Mapped[List["AuditFinding"]] = relationship(
         "AuditFinding", back_populates="report", cascade="all, delete-orphan"
+    )
+
+    # Relación ORM hacia User
+    executor: Mapped[Optional["User"]] = relationship(
+        "User", back_populates="executed_audits"
     )
 
 

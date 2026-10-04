@@ -8,7 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.db.database import Base
 
 if TYPE_CHECKING:
+    from app.auth.models import AuthCredential
     from app.clients.models import Client
+    from app.hardening.models import AuditReport
 
 
 user_roles = Table(
@@ -117,6 +119,14 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # 1:1 con credenciales
+    credentials: Mapped["AuthCredential"] = relationship(
+        "AuthCredential",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
     roles: Mapped[List[Role]] = relationship(
         "Role",
         secondary=user_roles,
@@ -129,6 +139,12 @@ class User(Base):
         secondary="client_technicians",
         back_populates="assigned_technicians",
         lazy="selectin",
+    )
+
+    # Trazabilidad: Auditorías ejecutadas por este usuario
+    executed_audits: Mapped[List["AuditReport"]] = relationship(
+        "AuditReport",
+        back_populates="executor",
     )
 
     created_at: Mapped[datetime] = mapped_column(

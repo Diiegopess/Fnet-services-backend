@@ -19,10 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # =========================================================================
-    # 1. TABLAS INDEPENDIENTES (Sin Claves Foráneas)
+    # 1. TABLAS INDEPENDIENTES Y RAÍZ
     # =========================================================================
 
-    # 1.1 Activity Logs (Formerly Audit Logs)
+    # 1.1 Activity Logs (Desacoplada para preservar auditoría inmutable)
     op.create_table(
         "activity_logs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -39,10 +39,23 @@ def upgrade() -> None:
     op.create_index(op.f("ix_activity_logs_user_id"), "activity_logs", ["user_id"], unique=False)
     op.create_index(op.f("ix_activity_logs_created_at"), "activity_logs", ["created_at"], unique=False)
 
-    # 1.2 Auth Credentials
+    # 1.2 Users (Entidad principal de identidad, se crea primero)
+    op.create_table(
+        "users",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("email", sa.String(length=255), nullable=False),
+        sa.Column("full_name", sa.String(length=255), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
+    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+
+    # 1.3 Auth Credentials (1:1 formal con Users)
     op.create_table(
         "auth_credentials",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=True),
         sa.Column("google_id", sa.String(length=255), nullable=True),
@@ -56,7 +69,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_auth_credentials_email"), "auth_credentials", ["email"], unique=True)
     op.create_index(op.f("ix_auth_credentials_google_id"), "auth_credentials", ["google_id"], unique=True)
 
-    # 1.3 Clients
+    # 1.4 Clients
     op.create_table(
         "clients",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -72,7 +85,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_clients_name"), "clients", ["name"], unique=True)
     op.create_index(op.f("ix_clients_tax_id"), "clients", ["tax_id"], unique=True)
 
-    # 1.4 Permissions
+    # 1.5 Permissions
     op.create_table(
         "permissions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -81,7 +94,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_permissions_code"), "permissions", ["code"], unique=True)
 
-    # 1.5 Roles
+    # 1.6 Roles
     op.create_table(
         "roles",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -89,19 +102,6 @@ def upgrade() -> None:
         sa.Column("description", sa.String(length=255), nullable=True),
     )
     op.create_index(op.f("ix_roles_name"), "roles", ["name"], unique=True)
-
-    # 1.6 Users
-    op.create_table(
-        "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("email", sa.String(length=255), nullable=False),
-        sa.Column("full_name", sa.String(length=255), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    )
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
 
     # 1.7 Devices (Fortigate)
     op.create_table(
@@ -139,7 +139,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", "standard_version"),
     )
 
-    # 1.9 Hardening Profiles
+    # 1.9 Hardening Profiles (Vinculado a Users en created_by)
     op.create_table(
         "hardening_profiles",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -148,7 +148,7 @@ def upgrade() -> None:
         sa.Column("standard_version", sa.String(length=20), nullable=False, server_default="v1.0.1"),
         sa.Column("profile_type", sa.Enum("SYSTEM", "CUSTOM", name="profiletype"), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
@@ -207,11 +207,11 @@ def upgrade() -> None:
         ),
     )
 
-    # 2.6 Hardening Audit Reports
+    # 2.6 Hardening Audit Reports (Vinculado a Users por executed_by; device_id opcional para backups offline)
     op.create_table(
         "hardening_audit_reports",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("device_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("device_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("vdom_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("execution_type", sa.Enum("FULL_STANDARD", "ASSIGNED_PROFILE", "CUSTOM_ADHOC", name="executiontype"), nullable=False),
         sa.Column("profile_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("hardening_profiles.id", ondelete="SET NULL"), nullable=True),
@@ -219,9 +219,11 @@ def upgrade() -> None:
         sa.Column("total_passed", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("total_failed", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("total_not_applicable", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("executed_by", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("executed_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=True),
         sa.Column("executed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
+    op.create_index(op.f("ix_hardening_audit_reports_executed_by"), "hardening_audit_reports", ["executed_by"], unique=False)
+    op.create_index(op.f("ix_hardening_audit_reports_device_id"), "hardening_audit_reports", ["device_id"], unique=False)
 
     # 2.7 Hardening Audit Findings (FK Compuesta hacia RuleCatalog)
     op.create_table(
@@ -230,7 +232,7 @@ def upgrade() -> None:
         sa.Column("report_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("hardening_audit_reports.id", ondelete="CASCADE"), nullable=False),
         sa.Column("rule_id", sa.String(length=50), nullable=False),
         sa.Column("standard_version", sa.String(length=20), nullable=False, server_default="v1.0.0"),
-        sa.Column("status", sa.Enum("PASSED", "PARCIAL", "FAILED", "NOT_APPLICABLE", name="findingstatus"), nullable=False),
+        sa.Column("status", sa.Enum("PASSED", "PARTIAL", "FAILED", "NOT_APPLICABLE", name="findingstatus"), nullable=False),
         sa.Column("compliance_score", sa.Float(), nullable=False, server_default=sa.text("0.0")),
         sa.Column("severity", sa.Enum("LOW", "MEDIUM", "HIGH", "CRITICAL", name="ruleseverity"), nullable=False),
         sa.Column("current_value", sa.Text(), nullable=True),
@@ -256,11 +258,11 @@ def downgrade() -> None:
     op.drop_table("hardening_profiles")
     op.drop_table("hardening_rule_catalog")
     op.drop_table("devices")
-    op.drop_table("users")
     op.drop_table("roles")
     op.drop_table("permissions")
     op.drop_table("clients")
     op.drop_table("auth_credentials")
+    op.drop_table("users")
     op.drop_table("activity_logs")
 
     # Eliminación de Enum Types creados por PostgreSQL
