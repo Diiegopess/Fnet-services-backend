@@ -5,143 +5,111 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class BackupMetadata:
-    """Información extraída de la cabecera del archivo de backup."""
-    raw_header: Optional[str] = None
-    model: Optional[str] = None
-    version: Optional[str] = None
+    model: str = "FortiGate"
+    version: str = "7.4.x"
     build: Optional[str] = None
-    opmode: Optional[str] = None
     vdom_enabled: bool = False
 
 
 @dataclass
 class ParsedBackupResult:
-    """Resultado del parseo: metadatos informativos + dump compatible con el engine."""
     metadata: BackupMetadata
     cmdb_dump: Dict[str, Any] = field(default_factory=dict)
 
 
 class FortiOSConfParser:
-    """
-    Parsea backups de FortiOS (.conf) de forma agnóstica de versión
-    y genera la estructura compatible con DeclarativeRuleEngine.
-    """
-
-    # Mapea las rutas CLI a los endpoints CMDB que evalúan tus benchmarks
-    CLI_TO_CMDB_MAP = {
-        ("system", "dns"): "api/v2/cmdb/system/dns",
-        ("system", "zone"): "api/v2/cmdb/system/zone",
-        ("system", "global"): "api/v2/cmdb/system/global",
-        ("system", "interface"): "api/v2/cmdb/system/interface",
-        ("system", "admin", "setting"): "api/v2/cmdb/system.admin/setting",
-        ("firewall", "policy"): "api/v2/cmdb/firewall/policy",
-        ("firewall", "address"): "api/v2/cmdb/firewall/address",
-        ("log", "syslogd", "setting"): "api/v2/cmdb/log.syslogd/setting",
-        ("log", "fortianalyzer", "setting"): "api/v2/cmdb/log.fortianalyzer/setting",
-    }
+    """Parsea el archivo .conf y arma la estructura raw_dump requerida por el motor."""
 
     def parse(self, raw_text: str) -> ParsedBackupResult:
         lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-        
-        # 1. Extraer metadatos de la cabecera (#config-version=...)
-        metadata = self._extract_header_metadata(lines)
+        metadata = self._extract_metadata(lines)
 
-        # 2. Filtrar comentarios
-        config_lines = [line for line in lines if not line.startswith("#")]
+        cmdb_dump: Dict[str, Any] = {}
 
-        # 3. Construir árbol jerárquico CLI
-        parsed_tree: Dict[str, Any] = {}
-        self._parse_block(config_lines, 0, parsed_tree)
+        # 1. Extraer 'config system global' -> api/v2/cmdb/system/global
+        global_cfg = self._extract_flat_section(lines, "config system global")
+        if global_cfg:
+            cmdb_dump["api/v2/cmdb/system/global"] = {
+                "http_method": "GET",
+                "status": "success",
+                "results": global_cfg,
+            }
 
-        # 4. Normalizar al dump que espera el DeclarativeRuleEngine
-        cmdb_dump = self._normalize_to_cmdb_dump(parsed_tree)
+        # 2. Extraer 'config system interface' -> api/v2/cmdb/system/interface
+        interfaces = self._extract_table_section(lines, "config system interface")
+        if interfaces:
+            cmdb_dump["api/v2/cmdb/system/interface"] = {
+                "http_method": "GET",
+                "status": "success",
+                "results": interfaces,
+            }
+
+        # 3. Extraer 'config system accprofile' -> api/v2/cmdb/system/accprofile
+        accprofiles = self._extract_table_section(lines, "config system accprofile")
+        if accprofiles:
+            cmdb_dump["api/v2/cmdb/system/accprofile"] = {
+                "http_method": "GET",
+                "status": "success",
+                "results": accprofiles,
+            }
 
         return ParsedBackupResult(metadata=metadata, cmdb_dump=cmdb_dump)
 
-    def _extract_header_metadata(self, lines: List[str]) -> BackupMetadata:
-        metadata = BackupMetadata()
-        for line in lines[:10]:
+    def _extract_metadata(self, lines: List[str]) -> BackupMetadata:
+        meta = BackupMetadata()
+        for line in lines[:15]:
             if line.startswith("#config-version="):
-                metadata.raw_header = line
-                # Formato típico: #config-version=FG100E-7.4.1-FW-build2463:opmode=0:vdom=0:user=admin
-                clean = line.replace("#config-version=", "")
-                parts = clean.split(":")
-                fw_info = parts[0] if len(parts) > 0 else ""
-
-                # Extraer modelo y versión
-                fw_match = re.match(r"([A-Za-z0-9_-]+?)-(\d+\.\d+\.\d+)-FW-build(\d+)", fw_info)
-                if fw_match:
-                    metadata.model = fw_match.group(1)
-                    metadata.version = fw_match.group(2)
-                    metadata.build = fw_match.group(3)
-                else:
-                    metadata.version = fw_info
-
-                for segment in parts[1:]:
-                    if segment.startswith("vdom="):
-                        metadata.vdom_enabled = segment.split("=")[1].strip() != "0"
-                    elif segment.startswith("opmode="):
-                        metadata.opmode = segment.split("=")[1].strip()
+                match = re.search(r"#config-version=([A-Za-z0-9_-]+)-(\d+\.\d+\.\d+)", line)
+                if match:
+                    meta.model = match.group(1)
+                    meta.version = match.group(2)
+                b_match = re.search(r"build(\d+)", line)
+                if b_match:
+                    meta.build = b_match.group(1)
+                meta.vdom_enabled = "vdom=1" in line
                 break
-        return metadata
+        return meta
 
-    def _parse_block(self, lines: List[str], index: int, current_scope: Dict[str, Any]) -> int:
-        while index < len(lines):
-            line = lines[index]
-
-            if line.startswith("config "):
-                section_name = line.split(" ", 1)[1].strip()
-                new_scope: Dict[str, Any] = {}
-                index = self._parse_block(lines, index + 1, new_scope)
-                current_scope[section_name] = new_scope
-
-            elif line.startswith("edit "):
-                # Instancia de una colección (ej: edit "port1")
-                edit_id = line.split(" ", 1)[1].strip().strip('"')
-                item_scope: Dict[str, Any] = {"name": edit_id}
-                index = self._parse_block(lines, index + 1, item_scope)
-                current_scope[edit_id] = item_scope
-
-            elif line.startswith("set "):
-                parts = line.split(" ", 2)
-                if len(parts) >= 3:
-                    key = parts[1]
-                    raw_val = parts[2].strip()
-
-                    # Tokenizar respetando comillas
-                    values = [
-                        v.strip().strip('"')
-                        for v in re.findall(r'(?:[^\s"]+|"[^"]*")+|(?:"[^"]*"|[^\s"]+)', raw_val)
-                    ]
-                    current_scope[key] = values[0] if len(values) == 1 else values
-                index += 1
-
-            elif line in ("end", "next"):
-                return index + 1
-            else:
-                index += 1
-
-        return index
-
-    def _normalize_to_cmdb_dump(self, parsed_tree: Dict[str, Any]) -> Dict[str, Any]:
-        cmdb_dump: Dict[str, Any] = {}
-
-        for cli_path, endpoint in self.CLI_TO_CMDB_MAP.items():
-            curr = parsed_tree
-            found = True
-            for part in cli_path:
-                if isinstance(curr, dict) and part in curr:
-                    curr = curr[part]
-                else:
-                    found = False
+    def _extract_flat_section(self, lines: List[str], section_header: str) -> Dict[str, Any]:
+        data: Dict[str, Any] = {}
+        inside = False
+        for line in lines:
+            if line == section_header:
+                inside = True
+                continue
+            if inside:
+                if line == "end":
                     break
+                if line.startswith("set "):
+                    parts = line.split(" ", 2)
+                    if len(parts) >= 3:
+                        key = parts[1].strip()
+                        raw_val = parts[2].strip().strip('"').strip("'")
+                        data[key] = int(raw_val) if raw_val.isdigit() else raw_val
+        return data
 
-            if found and isinstance(curr, dict):
-                # Determinar si es una lista o un registro único
-                sample_child = next(iter(curr.values()), None)
-                if isinstance(sample_child, dict) and "name" in sample_child:
-                    cmdb_dump[endpoint] = {"results": list(curr.values())}
-                else:
-                    cmdb_dump[endpoint] = {"results": curr}
+    def _extract_table_section(self, lines: List[str], section_header: str) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        inside = False
+        current_item: Optional[Dict[str, Any]] = None
 
-        return cmdb_dump
+        for line in lines:
+            if line == section_header:
+                inside = True
+                continue
+            if inside:
+                if line == "end" and current_item is None:
+                    break
+                if line.startswith("edit "):
+                    item_name = line[5:].strip().strip('"').strip("'")
+                    current_item = {"name": item_name}
+                elif line.startswith("set ") and current_item is not None:
+                    parts = line.split(" ", 2)
+                    if len(parts) >= 3:
+                        key = parts[1].strip()
+                        raw_val = parts[2].strip().strip('"').strip("'")
+                        current_item[key] = int(raw_val) if raw_val.isdigit() else raw_val
+                elif line == "next" and current_item is not None:
+                    items.append(current_item)
+                    current_item = None
+        return items

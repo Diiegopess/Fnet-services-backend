@@ -160,6 +160,7 @@ async def audit_backup_file(
     file: UploadFile = File(..., description="Archivo de backup de FortiOS (.conf o .txt)"),
     profile_id: Optional[uuid.UUID] = Form(None, description="UUID del perfil a evaluar (opcional)"),
     standard_version: Optional[str] = Form(None, description="Versión estándar CIS (ej. v1.0.1)"),
+    adhoc_rule_ids: List[str] = Form(default=[], description="Lista opcional de IDs de reglas para evaluación ad-hoc"),  # 👈 default=[]
     current_user: AuthenticatedUser = Depends(
         require_hardening_permission(HardeningPermission.EXECUTE)
     ),
@@ -168,6 +169,7 @@ async def audit_backup_file(
     """
     Pestaña de Auditoría Offline: recibe un archivo de backup .conf, lo analiza en memoria
     y retorna la evaluación y hallazgos sin requerir credenciales ni alterar la BD de dispositivos.
+    Soporta evaluación por perfil completo o por lista ad-hoc de reglas.
     """
     raw_bytes = await file.read()
     file_content = raw_bytes.decode("utf-8", errors="ignore")
@@ -183,6 +185,7 @@ async def audit_backup_file(
             file_content=file_content,
             profile_id=profile_id,
             standard_version=standard_version,
+            adhoc_rule_ids=adhoc_rule_ids,
         )
     except InvalidExecutionPayloadException as e:
         raise HTTPException(

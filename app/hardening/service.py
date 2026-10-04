@@ -63,7 +63,6 @@ class HardeningService:
     ) -> AuditReport:
         """Orquesta la auditoría declarativa cargando reglas y aislando endpoints."""
 
-        # 1. Determinar los IDs de reglas a ejecutar
         target_rule_ids: List[str] = []
         profile_rules = None
 
@@ -90,9 +89,6 @@ class HardeningService:
                 "No se encontraron reglas configuradas para ejecutar en esta solicitud."
             )
 
-        # 2. Para perfiles, conservar la versión de cada asociación (PK compuesta).
-        # No volver a filtrar por la versión del request: perfiles antiguos pueden
-        # tener una versión histórica en su cabecera, pero reglas versionadas válidas.
         if profile_rules is not None:
             rules_to_run = profile_rules
         else:
@@ -105,7 +101,6 @@ class HardeningService:
                 "Ninguna de las reglas solicitadas existe o está activa en la base de datos."
             )
 
-        # 3. EXTRACCIÓN DINÁMICA: Extraer endpoints desde las reglas cargadas
         parsed_config: Dict[str, Any] = raw_config or {}
 
         if not parsed_config:
@@ -118,7 +113,6 @@ class HardeningService:
                     "Se requieren los datos de conexión ('connection_data') para consultar el dispositivo."
                 )
 
-            # Deduplicar endpoints directamente de las entidades SQL cargadas
             required_endpoints = list({
                 rule.required_endpoint
                 for rule in rules_to_run
@@ -138,13 +132,11 @@ class HardeningService:
                 "No se obtuvo información de configuración para evaluar el dispositivo."
             )
 
-        # 4. Evaluación declarativa
         summary = self.evaluator.evaluate_rules(
             rules=rules_to_run,
             parsed_config=parsed_config,
         )
 
-        # 5. Persistir reporte en BD
         report = await self.repository.save_audit_report(
             device_id=device_id,
             vdom_id=vdom_id,
@@ -206,20 +198,21 @@ class HardeningService:
         devolviendo el resultado formateado para el frontend sin persistir en BD ni
         requerir conexión de red.
         """
-        # 1. Determinar el catálogo de reglas a evaluar
-        if profile_id:
+        # 1. Determinar el catálogo de reglas a evaluar (Prioridad estricta a Ad-Hoc si se envían reglas)
+        if adhoc_rule_ids and len(adhoc_rule_ids) > 0:
+            # Consultar directamente por ID sin restringir por standard_version para soportar reglas mixtas
+            rules_to_run = await self.repository.get_rules_by_ids(
+                rule_ids=adhoc_rule_ids,
+                standard_version=None  # 👈 Permite combinar CIS y FORTINET_BP
+            )
+        elif profile_id:
             profile = await self.repository.get_profile_by_id(profile_id)
             if not profile:
                 raise InvalidExecutionPayloadException(
                     "El perfil de hardening seleccionado no existe."
                 )
             rules_to_run = [r for r in profile.rules if getattr(r, "is_active", True)]
-        elif adhoc_rule_ids:
-            rules_to_run = await self.repository.get_rules_by_ids(
-                rule_ids=adhoc_rule_ids, standard_version=standard_version
-            )
         else:
-            # Evaluación completa por estándar si no se especificó un perfil o conjunto ad-hoc
             rules_to_run = await self.repository.get_all_active_rules(
                 standard_version=standard_version
             )
@@ -259,6 +252,3 @@ class HardeningService:
             "total_not_applicable": summary.total_not_applicable,
             "findings": summary.findings,
         }
-
-    
-    
