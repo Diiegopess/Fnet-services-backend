@@ -93,38 +93,55 @@ class VDOMService:
     async def sync_device_vdoms(
         self, device_id: uuid.UUID, metadata: Optional[EventMetadata] = None
     ) -> VDOMSyncResult:
-        """Descubre y sincroniza VDOMs desde el hardware sin acoplar con el integrador antiguo."""
-        # 1. Obtener los datos de conexión resueltos por la fachada de dispositivos
+        """Descubre y sincroniza VDOMs desde el hardware FortiGate."""
+        # 1. Obtener credenciales y conexión desencriptada
         connection_data = await self.devices_api.get_connection_data(device_id)
 
-        # 2. Consulta HTTP directa al API REST del FortiGate
-        is_local = "mock" in connection_data.host.lower() or connection_data.host in ("127.0.0.1", "localhost", "testserver")
-        scheme = "http" if is_local else "https"
+        # 2. Construir la URL hacia la CMDB de FortiOS
+        is_local = "mock" in connection_data.host.lower() or connection_data.host in (
+            "127.0.0.1",
+            "localhost",
+            "testserver",
+        )
+        scheme = "http" if is_local and connection_data.port != 12443 else "https"
         url = f"{scheme}://{connection_data.host}:{connection_data.port}/api/v2/cmdb/system/vdom"
-        headers = {"Authorization": f"Bearer {connection_data.decrypted_token}"}
+        
+        headers = {
+            "Authorization": f"Bearer {connection_data.decrypted_token}",
+            "Accept": "application/json",
+        }
+        # Parámetro access_token indispensable en FortiOS para evitar fallos de sesión REST
+        params = {"access_token": connection_data.decrypted_token}
 
         raw_vdoms = []
         try:
-            async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
-                response = await client.get(url, headers=headers)
+            async with httpx.AsyncClient(
+                verify=False,
+                http1=True,
+                timeout=httpx.Timeout(15.0),
+            ) as client:
+                response = await client.get(url, headers=headers, params=params)
+                
                 if response.status_code == 200:
                     payload = response.json()
                     raw_vdoms = payload.get("results", [])
                 else:
                     raise VDOMIntegrationError(
-                        message=f"El equipo retornó código de estado HTTP {response.status_code}",
-                        details={"status_code": response.status_code},
+                        message=f"FortiOS retornó estado HTTP {response.status_code}",
+                        details={"status_code": response.status_code, "body": response.text[:200]},
                     )
+        except VDOMIntegrationError:
+            raise
         except Exception as e:
             raise VDOMIntegrationError(
-                message="Error al consultar los VDOMs en el dispositivo físico.",
+                message="Error de red conectando con el FortiGate para sincronizar VDOMs",
                 details={"error": str(e)},
             )
 
         new_count = 0
         unaltered_count = 0
 
-        # 3. Mapear y procesar resultados en la base de datos
+        # 3. Upsert en base de datos
         for item in raw_vdoms:
             vdom_name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
             if not vdom_name:
@@ -138,7 +155,7 @@ class VDOMService:
             else:
                 new_vdom = DeviceVDOM(
                     device_id=device_id,
-                    client_id=None,  # Nace sin cliente asignado hasta que se asigne manualmente
+                    client_id=None,
                     name=vdom_name,
                     is_root=(vdom_name.lower() == "root"),
                     is_active=True,
@@ -146,17 +163,23 @@ class VDOMService:
                 await self.vdom_repo.create(new_vdom)
                 new_count += 1
 
-        # 4. Publicar evento de sincronización
+        # Confirmar la transacción explícitamente en la sesión
+        await self.db.commit()
+
+        # 4. Publicar evento (con try/except para que no rompa si Redis está apagado)
         if self.publisher and metadata:
-            event = DomainEvent(
-                event_type="vdom.synced",
-                metadata=metadata,
-                payload={"device_id": str(device_id), "discovered": len(raw_vdoms)},
-            )
-            await self.publisher.publish(
-                stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
-                event=event,
-            )
+            try:
+                event = DomainEvent(
+                    event_type="vdom.synced",
+                    metadata=metadata,
+                    payload={"device_id": str(device_id), "discovered": len(raw_vdoms)},
+                )
+                await self.publisher.publish(
+                    stream_or_topic=getattr(settings, "SYSTEM_EVENTS_STREAM_NAME", "stream:system_events"),
+                    event=event,
+                )
+            except Exception:
+                pass
 
         return VDOMSyncResult(
             device_id=device_id,

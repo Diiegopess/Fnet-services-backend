@@ -23,12 +23,13 @@ class DeviceBase(BaseModel):
     port: int = Field(default=443, ge=1, le=65535, description="Puerto de gestión de la API")
     fortios_version: str = Field(default="7.2", description="Versión principal de FortiOS (7.0, 7.2, 7.4)")
     is_active: bool = Field(default=True, description="Habilita/Deshabilita consultas al equipo")
-    client_id: Optional[uuid.UUID] = Field(None, description="ID del cliente asignado")
 
 
 class DeviceCreate(DeviceBase):
     api_token: str = Field(..., min_length=10, description="Token REST API generado en FortiOS")
     has_vdom_enabled: bool = Field(default=False, description="True si tiene múltiples VDOMs activos")
+    # client_id se recibe aquí solo para asociarlo a la VDOM inicial/root
+    client_id: Optional[uuid.UUID] = Field(None, description="ID del cliente asignado a la partición root")
 
 
 class DeviceUpdate(BaseModel):
@@ -39,15 +40,19 @@ class DeviceUpdate(BaseModel):
     fortios_version: Optional[str] = None
     has_vdom_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
-    client_id: Optional[uuid.UUID] = None
 
 
-class DeviceResponse(DeviceBase):
+class DeviceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    name: str
+    host: str
+    port: int
+    fortios_version: str
     serial_number: Optional[str] = None
     has_vdom_enabled: bool
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

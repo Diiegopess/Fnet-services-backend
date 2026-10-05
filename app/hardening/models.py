@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -140,12 +140,19 @@ class AuditReport(Base):
     )
     
     # Campo opcional para soportar análisis de archivos de backup offline
-    # Si la auditoría proviene de un archivo subido, device_id se guarda como None/NULL
+    # Si la auditoría proviene de un archivo subido, device_id y vdom_id se guardan como None/NULL
     device_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
-    vdom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    vdom_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("device_vdoms.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     execution_type: Mapped[ExecutionType] = mapped_column(
         Enum(ExecutionType, values_callable=lambda x: [e.value for e in x]),
@@ -177,7 +184,7 @@ class AuditReport(Base):
     )
 
     # Relación ORM hacia User
-    executor: Mapped[Optional["User"]] = relationship(
+    executor: Mapped[Optional[Any]] = relationship(
         "User", back_populates="executed_audits"
     )
 

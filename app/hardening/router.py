@@ -21,6 +21,7 @@ from app.devices.api import DevicesAPI
 from app.hardening.dependencies import (
     get_devices_api,
     get_hardening_service,
+    get_vdoms_api,
     require_hardening_permission,
 )
 from app.hardening.exceptions import InvalidExecutionPayloadException
@@ -38,6 +39,7 @@ from app.infrastructure.integrations.exceptions import (
     IntegrationConnectionError,
     IntegrationHTTPError,
 )
+from app.vdoms.api import VDOMsAPI
 
 router = APIRouter(prefix="/hardening", tags=["Hardening"])
 
@@ -96,38 +98,78 @@ async def run_audit(
     ),
     service: HardeningService = Depends(get_hardening_service),
     devices_api: DevicesAPI = Depends(get_devices_api),
+    vdoms_api: VDOMsAPI = Depends(get_vdoms_api),
 ):
-    """Ejecuta una auditoría de hardening declarativa aislando los endpoints requeridos."""
+    """
+    Ejecuta una auditoría de hardening.
+    La unidad objetivo es la VDOM. Si no se envía vdom_id pero sí device_id,
+    se evalúa automáticamente la VDOM 'root'.
+    """
     raw_config = getattr(payload, "raw_config", None)
     connection_data = None
+    target_device_id = payload.device_id
+    target_vdom_id = payload.vdom_id
+    vdom_name = "root"
 
+    # Si no es evaluación offline por texto, resolvemos la conectividad en vivo
     if not raw_config:
-        conn = await devices_api.get_connection_data(device_id=payload.device_id)
+        # Caso A: El usuario seleccionó directamente una VDOM (camino estándar)
+        if target_vdom_id:
+            vdom_dto = await vdoms_api.get_vdom_by_id(target_vdom_id)
+            if not vdom_dto:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No se encontró la partición VDOM con ID '{target_vdom_id}'.",
+                )
+            # Si también mandó device_id, validamos consistencia
+            if target_device_id and vdom_dto.device_id != target_device_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La VDOM indicada no pertenece al dispositivo proporcionado.",
+                )
+            target_device_id = vdom_dto.device_id
+            vdom_name = vdom_dto.name
+
+        # Caso B: El usuario solo envió device_id (equipo standalone o chasis completo)
+        elif target_device_id:
+            root_vdom = await vdoms_api.ensure_root_vdom(device_id=target_device_id)
+            target_vdom_id = root_vdom.id
+            vdom_name = root_vdom.name
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Se requiere al menos 'vdom_id' o 'device_id' para una auditoría en vivo.",
+            )
+
+        # 1. Obtener conectividad y token del chasis físico
+        conn = await devices_api.get_connection_data(device_id=target_device_id)
         if not conn:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No se encontraron los datos de conexión para el dispositivo especificado.",
+                detail="No se encontraron los datos de conexión para el dispositivo asociado.",
             )
 
+        # 2. Configurar el contexto de ejecución
         connection_data = {
             "host": conn.host,
             "port": conn.port,
             "token": conn.decrypted_token,
-            "vdom": getattr(conn, "vdom_name", None),
+            "vdom": vdom_name,
         }
 
     user_id = getattr(current_user, "id", None)
 
     try:
         report = await service.execute_audit(
-            device_id=payload.device_id,
+            device_id=target_device_id,
+            vdom_id=target_vdom_id,
             execution_type=payload.execution_type,
             connection_data=connection_data,
             raw_config=raw_config,
             profile_id=payload.profile_id,
             adhoc_rule_ids=getattr(payload, "adhoc_rule_ids", None),
             standard_version=payload.standard_version,
-            vdom_id=getattr(payload, "vdom_id", None),
             executed_by=user_id,
         )
         return report
@@ -160,16 +202,15 @@ async def audit_backup_file(
     file: UploadFile = File(..., description="Archivo de backup de FortiOS (.conf o .txt)"),
     profile_id: Optional[uuid.UUID] = Form(None, description="UUID del perfil a evaluar (opcional)"),
     standard_version: Optional[str] = Form(None, description="Versión estándar CIS (ej. v1.0.1)"),
-    adhoc_rule_ids: List[str] = Form(default=[], description="Lista opcional de IDs de reglas para evaluación ad-hoc"),  # 👈 default=[]
+    adhoc_rule_ids: List[str] = Form(default=[], description="Lista opcional de IDs de reglas para evaluación ad-hoc"),
     current_user: AuthenticatedUser = Depends(
         require_hardening_permission(HardeningPermission.EXECUTE)
     ),
     service: HardeningService = Depends(get_hardening_service),
 ):
     """
-    Pestaña de Auditoría Offline: recibe un archivo de backup .conf, lo analiza en memoria
-    y retorna la evaluación y hallazgos sin requerir credenciales ni alterar la BD de dispositivos.
-    Soporta evaluación por perfil completo o por lista ad-hoc de reglas.
+    Pestaña de Auditoría Offline: analiza un archivo de backup .conf en memoria
+    sin persistir credenciales ni alterar el inventario de dispositivos.
     """
     raw_bytes = await file.read()
     file_content = raw_bytes.decode("utf-8", errors="ignore")
@@ -208,6 +249,7 @@ async def audit_backup_file(
 )
 async def list_audit_reports(
     device_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de dispositivo"),
+    vdom_id: Optional[uuid.UUID] = Query(None, description="Filtrar por ID de VDOM"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: AuthenticatedUser = Depends(
@@ -215,7 +257,9 @@ async def list_audit_reports(
     ),
     service: HardeningService = Depends(get_hardening_service),
 ):
-    return await service.list_reports(device_id=device_id, limit=limit, offset=offset)
+    return await service.list_reports(
+        device_id=device_id, vdom_id=vdom_id, limit=limit, offset=offset
+    )
 
 
 @router.get(

@@ -131,13 +131,13 @@ class HardeningRepository:
     # --- Persistencia y Consulta de Resultados ---
     async def save_audit_report(
         self,
-        device_id: UUID,
         execution_type: ExecutionType,
         score: float,
         total_passed: int,
         total_failed: int,
         total_not_applicable: int,
         findings_data: List[dict],
+        device_id: Optional[UUID] = None,
         vdom_id: Optional[UUID] = None,
         profile_id: Optional[UUID] = None,
         executed_by: Optional[UUID] = None,
@@ -194,10 +194,11 @@ class HardeningRepository:
     async def get_reports(
         self,
         device_id: Optional[UUID] = None,
+        vdom_id: Optional[UUID] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> Sequence[AuditReport]:
-        """Obtiene la lista de reportes de auditoría paginados."""
+        """Obtiene la lista de reportes de auditoría paginados con filtros opcionales."""
         stmt = (
             select(AuditReport)
             .options(selectinload(AuditReport.findings))
@@ -205,6 +206,8 @@ class HardeningRepository:
 
         if device_id:
             stmt = stmt.where(AuditReport.device_id == device_id)
+        if vdom_id:
+            stmt = stmt.where(AuditReport.vdom_id == vdom_id)
 
         stmt = stmt.order_by(AuditReport.executed_at.desc()).limit(limit).offset(offset)
 

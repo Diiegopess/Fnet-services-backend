@@ -4,10 +4,11 @@ Repositorio de Persistencia para Dispositivos Físicos (Chasis).
 
 import uuid
 from typing import Optional, Sequence
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.devices.models import FortigateDevice
+from app.vdoms.models import DeviceVDOM
 
 
 class DeviceRepository:
@@ -32,11 +33,20 @@ class DeviceRepository:
         limit: int = 50, 
         client_id: Optional[uuid.UUID] = None
     ) -> Sequence[FortigateDevice]:
-        """Obtiene una lista paginada de dispositivos con filtro opcional de cliente."""
-        stmt = select(FortigateDevice)
-
+        """
+        Obtiene una lista paginada de dispositivos.
+        Si se especifica client_id, filtra a través de las particiones VDOM asociadas.
+        """
         if client_id is not None:
-            stmt = stmt.where(FortigateDevice.client_id == client_id)
+            # Consulta relacional a través de las particiones (VDOMs)
+            stmt = (
+                select(FortigateDevice)
+                .join(DeviceVDOM, DeviceVDOM.device_id == FortigateDevice.id)
+                .where(DeviceVDOM.client_id == client_id)
+                .distinct()
+            )
+        else:
+            stmt = select(FortigateDevice)
 
         stmt = (
             stmt
@@ -48,19 +58,23 @@ class DeviceRepository:
         return res.scalars().all()
 
     async def create(self, device: FortigateDevice) -> FortigateDevice:
-        """Persiste un nuevo dispositivo en la base de datos."""
+        """
+        Persiste un nuevo dispositivo en la sesión.
+        Usa flush() para asignar ID y mantener la transacción viva
+        mientras se crea la VDOM 'root'.
+        """
         self.db.add(device)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(device)
         return device
 
     async def update(self, device: FortigateDevice) -> FortigateDevice:
         """Actualiza el estado de un dispositivo existente."""
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(device)
         return device
 
     async def delete(self, device: FortigateDevice) -> None:
         """Elimina un dispositivo de la base de datos."""
         await self.db.delete(device)
-        await self.db.commit()
+        await self.db.flush()

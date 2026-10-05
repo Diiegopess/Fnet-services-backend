@@ -35,12 +35,13 @@ class HardeningService:
     async def list_reports(
         self,
         device_id: Optional[UUID] = None,
+        vdom_id: Optional[UUID] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> Sequence[AuditReport]:
-        """Obtiene los reportes de auditoría guardados."""
+        """Obtiene los reportes de auditoría guardados con filtros opcionales de device o vdom."""
         return await self.repository.get_reports(
-            device_id=device_id, limit=limit, offset=offset
+            device_id=device_id, vdom_id=vdom_id, limit=limit, offset=offset
         )
 
     async def get_report_by_id(self, report_id: UUID) -> Optional[AuditReport]:
@@ -51,31 +52,48 @@ class HardeningService:
 
     async def execute_audit(
         self,
-        device_id: UUID,
         execution_type: ExecutionType,
+        device_id: Optional[UUID] = None,
+        vdom_id: Optional[UUID] = None,
         connection_data: Optional[Dict[str, Any]] = None,
-        raw_config: Optional[Dict[str, Any]] = None,
+        raw_config: Optional[Any] = None,
         profile_id: Optional[UUID] = None,
         adhoc_rule_ids: Optional[List[str]] = None,
-        standard_version: Optional[str] = None,
-        vdom_id: Optional[UUID] = None,
+        standard_version: Optional[str] = "v1.0.1",
         executed_by: Optional[UUID] = None,
     ) -> AuditReport:
-        """Orquesta la auditoría declarativa cargando reglas y aislando endpoints."""
-
+        """
+        Orquesta la auditoría declarativa cargando reglas y evaluando sobre la VDOM de destino.
+        """
         target_rule_ids: List[str] = []
         profile_rules = None
 
-        if execution_type in (ExecutionType.FULL_STANDARD, ExecutionType.ASSIGNED_PROFILE):
+        # 1. Resolución de reglas a ejecutar
+        if execution_type == ExecutionType.ASSIGNED_PROFILE:
             if not profile_id:
                 raise InvalidExecutionPayloadException(
-                    "Se requiere 'profile_id' para ejecuciones por estándar o perfil asignado."
+                    "Se requiere 'profile_id' para ejecuciones por perfil asignado."
                 )
             profile = await self.repository.get_profile_by_id(profile_id)
             profile_rules = [
                 rule for rule in profile.rules if getattr(rule, "is_active", True)
             ]
             target_rule_ids = [rule.id for rule in profile_rules]
+
+        elif execution_type == ExecutionType.FULL_STANDARD:
+            if profile_id:
+                profile = await self.repository.get_profile_by_id(profile_id)
+                profile_rules = [
+                    rule for rule in profile.rules if getattr(rule, "is_active", True)
+                ]
+                target_rule_ids = [rule.id for rule in profile_rules]
+            else:
+                # Si no hay profile_id, se obtienen todas las reglas activas de la versión estándar
+                rules_to_run = await self.repository.get_all_active_rules(
+                    standard_version=standard_version
+                )
+                target_rule_ids = [rule.id for rule in rules_to_run]
+                profile_rules = rules_to_run
 
         elif execution_type == ExecutionType.CUSTOM_ADHOC:
             if not adhoc_rule_ids:
@@ -101,9 +119,17 @@ class HardeningService:
                 "Ninguna de las reglas solicitadas existe o está activa en la base de datos."
             )
 
-        parsed_config: Dict[str, Any] = raw_config or {}
+        # 2. Obtención y normalización de la configuración a evaluar
+        parsed_config: Dict[str, Any] = {}
 
-        if not parsed_config:
+        if raw_config:
+            if isinstance(raw_config, str):
+                parser = FortiOSConfParser()
+                parse_result = parser.parse(raw_config)
+                parsed_config = parse_result.cmdb_dump
+            elif isinstance(raw_config, dict):
+                parsed_config = raw_config
+        else:
             if not self.fetcher:
                 raise InvalidExecutionPayloadException(
                     "No se proporcionó 'raw_config' y el servicio 'fetcher' no está disponible."
@@ -124,7 +150,7 @@ class HardeningService:
                 port=connection_data["port"],
                 api_token=connection_data["token"],
                 endpoints=required_endpoints,
-                vdom=connection_data.get("vdom"),
+                vdom=connection_data.get("vdom", "root"),
             )
 
         if not parsed_config:
@@ -132,11 +158,13 @@ class HardeningService:
                 "No se obtuvo información de configuración para evaluar el dispositivo."
             )
 
+        # 3. Evaluación de reglas contra la configuración obtenida
         summary = self.evaluator.evaluate_rules(
             rules=rules_to_run,
             parsed_config=parsed_config,
         )
 
+        # 4. Persistencia del reporte formal asociando VDOM y Device
         report = await self.repository.save_audit_report(
             device_id=device_id,
             vdom_id=vdom_id,
@@ -200,10 +228,9 @@ class HardeningService:
         """
         # 1. Determinar el catálogo de reglas a evaluar (Prioridad estricta a Ad-Hoc si se envían reglas)
         if adhoc_rule_ids and len(adhoc_rule_ids) > 0:
-            # Consultar directamente por ID sin restringir por standard_version para soportar reglas mixtas
             rules_to_run = await self.repository.get_rules_by_ids(
                 rule_ids=adhoc_rule_ids,
-                standard_version=None  # 👈 Permite combinar CIS y FORTINET_BP
+                standard_version=None
             )
         elif profile_id:
             profile = await self.repository.get_profile_by_id(profile_id)

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,10 +48,8 @@ class VDOMSyncItem(BaseModel):
 
 
 class VDOMSyncResult(BaseModel):
-    """Resultado del escaneo e importación de VDOMs de un dispositivo."""
     device_id: uuid.UUID
     total_found: int
     new_registered: int
     existing_unaltered: int
-
-    created_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

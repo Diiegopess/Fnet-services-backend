@@ -22,7 +22,7 @@ def upgrade() -> None:
     # 1. TABLAS INDEPENDIENTES Y RAÍZ
     # =========================================================================
 
-    # 1.1 Activity Logs (Desacoplada para preservar auditoría inmutable)
+    # 1.1 Activity Logs
     op.create_table(
         "activity_logs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -39,7 +39,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_activity_logs_user_id"), "activity_logs", ["user_id"], unique=False)
     op.create_index(op.f("ix_activity_logs_created_at"), "activity_logs", ["created_at"], unique=False)
 
-    # 1.2 Users (Entidad principal de identidad, se crea primero)
+    # 1.2 Users
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -52,7 +52,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
 
-    # 1.3 Auth Credentials (1:1 formal con Users)
+    # 1.3 Auth Credentials
     op.create_table(
         "auth_credentials",
         sa.Column("id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
@@ -103,7 +103,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_roles_name"), "roles", ["name"], unique=True)
 
-    # 1.7 Devices (Fortigate)
+    # 1.7 Devices (Hardware limpio sin client_id)
     op.create_table(
         "devices",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -122,7 +122,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_devices_host"), "devices", ["host"], unique=True)
     op.create_index(op.f("ix_devices_serial_number"), "devices", ["serial_number"], unique=True)
 
-    # 1.8 Hardening Rule Catalog (Clave Primaria Compuesta)
+    # 1.8 Hardening Rule Catalog
     op.create_table(
         "hardening_rule_catalog",
         sa.Column("id", sa.String(length=50), nullable=False),
@@ -139,7 +139,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", "standard_version"),
     )
 
-    # 1.9 Hardening Profiles (Vinculado a Users en created_by)
+    # 1.9 Hardening Profiles
     op.create_table(
         "hardening_profiles",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -154,36 +154,36 @@ def upgrade() -> None:
     )
 
     # =========================================================================
-    # 2. TABLAS INTERMEDIAS Y DEPENDIENTES (Con Claves Foráneas)
+    # 2. TABLAS INTERMEDIAS Y DEPENDIENTES
     # =========================================================================
 
-    # 2.1 User Roles (N:M Users <-> Roles)
+    # 2.1 User Roles
     op.create_table(
         "user_roles",
         sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("role_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
     )
 
-    # 2.2 Role Permissions (N:M Roles <-> Permissions)
+    # 2.2 Role Permissions
     op.create_table(
         "role_permissions",
         sa.Column("role_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("permission_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True),
     )
 
-    # 2.3 Client Technicians (N:M Clients <-> Users)
+    # 2.3 Client Technicians
     op.create_table(
         "client_technicians",
         sa.Column("client_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     )
 
-    # 2.4 Device VDOMs (1:N Devices -> VDOMs, 1:N Clients -> VDOMs)
+    # 2.4 Device VDOMs (client_id nullable=True)
     op.create_table(
         "device_vdoms",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("device_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("devices.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("client_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("client_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("clients.id", ondelete="RESTRICT"), nullable=True),
         sa.Column("name", sa.String(length=100), nullable=False),
         sa.Column("is_root", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
@@ -194,7 +194,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_device_vdoms_device_id"), "device_vdoms", ["device_id"], unique=False)
     op.create_index(op.f("ix_device_vdoms_client_id"), "device_vdoms", ["client_id"], unique=False)
 
-    # 2.5 Hardening Profile Rules (N:M Profiles <-> RuleCatalog con FK Compuesta)
+    # 2.5 Hardening Profile Rules
     op.create_table(
         "hardening_profile_rules",
         sa.Column("profile_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("hardening_profiles.id", ondelete="CASCADE"), primary_key=True),
@@ -207,12 +207,12 @@ def upgrade() -> None:
         ),
     )
 
-    # 2.6 Hardening Audit Reports (Vinculado a Users por executed_by; device_id opcional para backups offline)
+    # 2.6 Hardening Audit Reports (FKs formales hacia devices y device_vdoms)
     op.create_table(
         "hardening_audit_reports",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("device_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("vdom_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("device_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("devices.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("vdom_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("device_vdoms.id", ondelete="SET NULL"), nullable=True),
         sa.Column("execution_type", sa.Enum("FULL_STANDARD", "ASSIGNED_PROFILE", "CUSTOM_ADHOC", name="executiontype"), nullable=False),
         sa.Column("profile_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("hardening_profiles.id", ondelete="SET NULL"), nullable=True),
         sa.Column("score", sa.Float(), nullable=False),
@@ -224,8 +224,9 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_hardening_audit_reports_executed_by"), "hardening_audit_reports", ["executed_by"], unique=False)
     op.create_index(op.f("ix_hardening_audit_reports_device_id"), "hardening_audit_reports", ["device_id"], unique=False)
+    op.create_index(op.f("ix_hardening_audit_reports_vdom_id"), "hardening_audit_reports", ["vdom_id"], unique=False)
 
-    # 2.7 Hardening Audit Findings (FK Compuesta hacia RuleCatalog)
+    # 2.7 Hardening Audit Findings
     op.create_table(
         "hardening_audit_findings",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),

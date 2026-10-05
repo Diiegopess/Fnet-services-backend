@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.api import require_permission
 from app.devices.api import DevicesAPI
+from app.vdoms.api import VDOMsAPI
 from app.infrastructure.db.database import get_db
 from app.infrastructure.integrations.fortinet.fetcher import FortinetConfigFetcher
 from app.hardening.permissions import HardeningPermission
@@ -31,8 +32,12 @@ def get_hardening_service(
     fetcher = FortinetConfigFetcher(timeout_seconds=30.0)
     return HardeningService(repository=repo, fetcher=fetcher)
 
-
 def get_devices_api(
     db: AsyncSession = Depends(get_db),
 ) -> DevicesAPI:
     return DevicesAPI(db=db)
+
+def get_vdoms_api(
+    db: AsyncSession = Depends(get_db),
+) -> VDOMsAPI:
+    return VDOMsAPI(db=db)

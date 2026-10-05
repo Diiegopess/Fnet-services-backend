@@ -1,5 +1,3 @@
-# app/services/hardening/schemas.py
-
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -55,27 +53,43 @@ class HardeningProfileResponse(BaseModel):
 # --- SCHEMAS DE EJECUCIÓN Y AUDITORÍA ---
 
 class AuditExecutionRequest(BaseModel):
-    device_id: UUID
-    execution_type: ExecutionType
+    vdom_id: Optional[UUID] = Field(
+        None, description="ID de la VDOM objetivo a evaluar (Recomendado)."
+    )
+    device_id: Optional[UUID] = Field(
+        None, description="ID del chasis físico (opcional si se provee vdom_id o raw_config)."
+    )
+    execution_type: ExecutionType = Field(
+        default=ExecutionType.FULL_STANDARD,
+        description="Tipo de ejecución (FULL_STANDARD, ASSIGNED_PROFILE, CUSTOM_ADHOC)"
+    )
     profile_id: Optional[UUID] = None
     adhoc_rule_ids: Optional[List[str]] = None
-    standard_version: Optional[str] = Field("v1.0.0", description="Versión del benchmark a evaluar.")
-    vdom_id: Optional[UUID] = None
+    standard_version: Optional[str] = Field("v1.0.1", description="Versión del benchmark a evaluar.")
     connection_data: Optional[Dict[str, Any]] = Field(
         None, description="Parámetros host/port/token si se extrae en caliente."
     )
     raw_config: Optional[Any] = Field(
-        None, description="Configuración estática/mock para pruebas."
+        None, description="Configuración estática/mock para pruebas u offline."
     )
 
     @model_validator(mode="after")
     def validate_execution_payload(self) -> "AuditExecutionRequest":
+        # 1. Validación de destino (si no es offline, se requiere vdom_id o device_id)
+        if not self.raw_config and not self.vdom_id and not self.device_id:
+            raise ValueError("Para auditorías en vivo se requiere al menos 'vdom_id' o 'device_id'.")
+
+        # 2. Validación de reglas según el tipo de ejecución
         if self.execution_type == ExecutionType.CUSTOM_ADHOC:
             if not self.adhoc_rule_ids or len(self.adhoc_rule_ids) == 0:
                 raise ValueError("Para ejecuciones CUSTOM_ADHOC se requiere 'adhoc_rule_ids' con al menos una regla.")
-        elif self.execution_type in (ExecutionType.FULL_STANDARD, ExecutionType.ASSIGNED_PROFILE):
+        elif self.execution_type == ExecutionType.ASSIGNED_PROFILE:
             if not self.profile_id:
-                raise ValueError("Para ejecuciones por perfil o estándar se requiere 'profile_id'.")
+                raise ValueError("Para ejecuciones ASSIGNED_PROFILE se requiere 'profile_id'.")
+        elif self.execution_type == ExecutionType.FULL_STANDARD:
+            if not self.profile_id and not self.standard_version:
+                raise ValueError("Para ejecuciones FULL_STANDARD se requiere 'profile_id' o 'standard_version'.")
+
         return self
 
 
@@ -97,10 +111,12 @@ class AuditReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    device_id: UUID
+    device_id: Optional[UUID] = None
+    vdom_id: Optional[UUID] = None
     profile_id: Optional[UUID] = None
     execution_type: ExecutionType
     score: float = Field(0.0, description="Porcentaje total de cumplimiento de la auditoría.")
+    executed_by: Optional[UUID] = None
     executed_at: datetime
 
     total_passed: int
@@ -118,7 +134,8 @@ class AuditReportResponse(BaseModel):
             )
         return self
 
-    # --- SCHEMAS DE AUDITORÍA DESDE ARCHIVO DE BACKUP (OFFLINE) ---
+
+# --- SCHEMAS DE AUDITORÍA DESDE ARCHIVO DE BACKUP (OFFLINE) ---
 
 class BackupFindingResponse(BaseModel):
     """Hallazgo individual evaluado en memoria a partir del backup."""
