@@ -58,6 +58,11 @@ class FortiOSRawHttpClient:
 
         ssl_verify = self._get_ssl_context()
 
+        # Inyectar access_token en params para compatibilidad total con FortiOS 7.2+
+        query_params = dict(params or {})
+        if self.token and "access_token" not in query_params:
+            query_params["access_token"] = self.token
+
         async with httpx.AsyncClient(
             verify=ssl_verify,
             http1=True,
@@ -65,7 +70,7 @@ class FortiOSRawHttpClient:
         ) as client:
             try:
                 response = await client.get(
-                    url, headers=self._get_headers(), params=params or {}
+                    url, headers=self._get_headers(), params=query_params
                 )
                 response.raise_for_status()
                 response.encoding = "utf-8"
