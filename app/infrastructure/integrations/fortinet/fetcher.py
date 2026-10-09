@@ -1,14 +1,17 @@
 # app/infrastructure/integrations/fortinet/fetcher.py
 
 import json
+import logging
 from typing import Any, Dict, List, Optional, Union
 import uuid
 
 from app.infrastructure.integrations.fortinet.client import FortiOSRawHttpClient
 
+logger = logging.getLogger(__name__)
+
 
 class FortinetConfigFetcher:
-    """Extractor desacoplado para FortiOS REST API compatible con permisos de solo lectura."""
+    """Extractor agnóstico y desacoplado para consultas CMDB/REST en FortiOS."""
 
     def __init__(self, timeout_seconds: float = 30.0):
         self.timeout_seconds = timeout_seconds
@@ -18,15 +21,24 @@ class FortinetConfigFetcher:
         host: str,
         port: int,
         api_token: str,
-        endpoints: List[str],
-        vdom: Optional[Union[str, uuid.UUID]] = None,
+        endpoint_targets: Optional[Dict[str, Optional[str]]] = None,
+        endpoints: Optional[List[str]] = None,
+        default_vdom: Optional[Union[str, uuid.UUID]] = None,
     ) -> Dict[str, Any]:
-        """Consulta una lista dinámica de endpoints REST y devuelve un mapa con sus respuestas JSON.
-        
+        """
+        Consulta endpoints REST de manera individual respetando el contexto VDOM asignado a cada uno.
+
         Args:
-            endpoints: Lista de rutas de la API, ej: ['api/v2/cmdb/system/global', 'api/v2/cmdb/log.disk/setting']
+            host: IP o dominio del dispositivo.
+            port: Puerto HTTPS de administración.
+            api_token: Token de la API descifrado.
+            endpoint_targets: Diccionario mapeando {endpoint: target_vdom}.
+                              Ej: {'api/v2/cmdb/system/global': 'global', 'api/v2/cmdb/firewall/policy': 'CONTABLE'}
+            endpoints: (Opcional por retrocompatibilidad) Lista simple de endpoints.
+            default_vdom: (Opcional) VDOM por defecto si se usa la lista de endpoints simple.
+
         Returns:
-            Dict[str, Any]: Un diccionario donde la clave es el endpoint y el valor es la respuesta parseada.
+            Dict[str, Any]: Diccionario {endpoint: parsed_json_response}.
         """
         client = FortiOSRawHttpClient(
             host=host,
@@ -36,27 +48,37 @@ class FortinetConfigFetcher:
             timeout=self.timeout_seconds,
         )
 
-        vdom_str = str(vdom).strip() if vdom else None
-        params: Dict[str, Any] = {"include_default": "1"}
-        if vdom_str:
-            params["vdom"] = vdom_str
+        # 1. Normalizar el mapa de trabajo {endpoint: vdom_name}
+        resolved_targets: Dict[str, Optional[str]] = {}
 
-        # Mapeo: { "api/v2/cmdb/system/global": { "status": "success", "results": {...} } }
+        if endpoint_targets:
+            for ep, vdom_val in endpoint_targets.items():
+                resolved_targets[ep.lstrip("/")] = str(vdom_val).strip() if vdom_val else None
+
+        if endpoints:
+            fallback_vdom = str(default_vdom).strip() if default_vdom else None
+            for ep in endpoints:
+                clean_ep = ep.lstrip("/")
+                if clean_ep not in resolved_targets:
+                    resolved_targets[clean_ep] = fallback_vdom
+
         retrieved_data: Dict[str, Any] = {}
 
-        # Deduplicar la lista de endpoints requeridos
-        unique_endpoints = list(set(endpoints))
+        # 2. Ejecutar cada consulta de forma agnóstica
+        for clean_endpoint, target_vdom in resolved_targets.items():
+            params: Dict[str, Any] = {"include_default": "1"}
+            if target_vdom:
+                params["vdom"] = target_vdom
 
-        for endpoint in unique_endpoints:
-            # Normalizar ruta eliminando la barra inicial si existe
-            clean_endpoint = endpoint.lstrip("/")
             try:
                 raw_json = await client.get_raw_text(endpoint=clean_endpoint, params=params)
                 res_data = json.loads(raw_json)
                 retrieved_data[clean_endpoint] = res_data
             except Exception as e:
-                # Si un endpoint falla (ej. 404 por versión o licenciamiento), se inicializa vacío
-                print(f"[FETCHER WARNING] Error al consultar endpoint '{clean_endpoint}': {e}")
+                logger.warning(
+                    f"[FETCHER WARNING] Error consultando endpoint '{clean_endpoint}' "
+                    f"en vdom='{target_vdom}': {e}"
+                )
                 retrieved_data[clean_endpoint] = {}
 
         return retrieved_data

@@ -132,12 +132,14 @@ def upgrade() -> None:
         sa.Column("category", sa.String(length=100), nullable=False),
         sa.Column("standard", sa.String(length=50), nullable=False),
         sa.Column("default_severity", sa.Enum("LOW", "MEDIUM", "HIGH", "CRITICAL", name="ruleseverity"), nullable=False),
+        sa.Column("scope", sa.Enum("GLOBAL", "VDOM", name="rulescope"), nullable=False, server_default="VDOM"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("required_endpoint", sa.String(length=255), nullable=False),
         sa.Column("rule_spec", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id", "standard_version"),
     )
+    op.create_index(op.f("ix_hardening_rule_catalog_scope"), "hardening_rule_catalog", ["scope"], unique=False)
 
     # 1.9 Hardening Profiles
     op.create_table(
@@ -257,6 +259,7 @@ def downgrade() -> None:
     op.drop_table("role_permissions")
     op.drop_table("user_roles")
     op.drop_table("hardening_profiles")
+    op.drop_index(op.f("ix_hardening_rule_catalog_scope"), table_name="hardening_rule_catalog")
     op.drop_table("hardening_rule_catalog")
     op.drop_table("devices")
     op.drop_table("roles")
@@ -267,6 +270,7 @@ def downgrade() -> None:
     op.drop_table("activity_logs")
 
     # Eliminación de Enum Types creados por PostgreSQL
+    sa.Enum(name="rulescope").drop(op.get_bind(), checkfirst=False)
     sa.Enum(name="findingstatus").drop(op.get_bind(), checkfirst=False)
     sa.Enum(name="executiontype").drop(op.get_bind(), checkfirst=False)
     sa.Enum(name="profiletype").drop(op.get_bind(), checkfirst=False)

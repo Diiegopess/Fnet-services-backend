@@ -39,4 +39,5 @@ class DevicesAPI:
             port=device.port,
             decrypted_token=token_decrypted,
             fortios_version=getattr(device, "fortios_version", "7.2") or "7.2",
+            has_vdom_enabled=getattr(device, "has_vdom_enabled", False),
         )

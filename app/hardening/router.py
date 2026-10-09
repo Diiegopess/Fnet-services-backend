@@ -156,6 +156,7 @@ async def run_audit(
             "port": conn.port,
             "token": conn.decrypted_token,
             "vdom": vdom_name,
+            "has_vdom_enabled": getattr(conn, "has_vdom_enabled", False),
         }
 
     user_id = getattr(current_user, "id", None)

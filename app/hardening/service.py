@@ -1,13 +1,23 @@
 # app/services/hardening/service.py
 
+import logging
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
 from app.hardening.engine.evaluator import HardeningEvaluator
 from app.hardening.exceptions import InvalidExecutionPayloadException
-from app.hardening.models import AuditReport, ExecutionType, HardeningProfile
-from app.hardening.repository import HardeningRepository
+from app.hardening.models import (
+    AuditReport,
+    ExecutionType,
+    FindingStatus,
+    HardeningProfile,
+    RuleCatalog,
+    RuleScope,
+)
 from app.hardening.parsers.fortios_conf_parser import FortiOSConfParser
+from app.hardening.repository import HardeningRepository
+
+logger = logging.getLogger(__name__)
 
 
 class HardeningService:
@@ -63,7 +73,8 @@ class HardeningService:
         executed_by: Optional[UUID] = None,
     ) -> AuditReport:
         """
-        Orquesta la auditoría declarativa cargando reglas y evaluando sobre la VDOM de destino.
+        Orquesta la auditoría declarativa resolviendo el alcance (Scope)
+        de cada regla frente al objetivo (Chasis Global vs Partición VDOM).
         """
         target_rule_ids: List[str] = []
         profile_rules = None
@@ -88,7 +99,6 @@ class HardeningService:
                 ]
                 target_rule_ids = [rule.id for rule in profile_rules]
             else:
-                # Si no hay profile_id, se obtienen todas las reglas activas de la versión estándar
                 rules_to_run = await self.repository.get_all_active_rules(
                     standard_version=standard_version
                 )
@@ -139,18 +149,43 @@ class HardeningService:
                     "Se requieren los datos de conexión ('connection_data') para consultar el dispositivo."
                 )
 
-            required_endpoints = list({
-                rule.required_endpoint
-                for rule in rules_to_run
-                if rule.required_endpoint
-            })
+            target_vdom_name = connection_data.get("vdom", "root")
+            has_vdom_enabled = connection_data.get("has_vdom_enabled", False)
+            is_client_vdom = has_vdom_enabled and (target_vdom_name.lower() != "root")
+
+            endpoint_targets: Dict[str, Optional[str]] = {}
+
+            for rule in rules_to_run:
+                if not rule.required_endpoint:
+                    continue
+
+                rule_scope = getattr(rule, "scope", RuleScope.VDOM)
+                clean_ep = rule.required_endpoint.lstrip("/")
+
+                # Escenario A: Multi-VDOM auditando partición de cliente (CONTABLE, LEGALES)
+                if is_client_vdom:
+                    if rule_scope == RuleScope.GLOBAL:
+                        # Se omiten las peticiones de chasis; declarative.py marcará NOT_APPLICABLE
+                        continue
+                    endpoint_targets[clean_ep] = target_vdom_name
+
+                # Escenario B: Monolítico / Standalone (has_vdom_enabled == False)
+                # Todas las reglas (GLOBAL y VDOM) se consultan bajo la única partición 'root'
+                elif not has_vdom_enabled:
+                    endpoint_targets[clean_ep] = "root"
+
+                # Escenario C: Multi-VDOM auditando el administrador de chasis ('root')
+                else:
+                    if rule_scope == RuleScope.GLOBAL:
+                        endpoint_targets[clean_ep] = "global"
+                    else:
+                        endpoint_targets[clean_ep] = "root"
 
             parsed_config = await self.fetcher.fetch_endpoints_data(
                 host=connection_data["host"],
                 port=connection_data["port"],
                 api_token=connection_data["token"],
-                endpoints=required_endpoints,
-                vdom=connection_data.get("vdom", "root"),
+                endpoint_targets=endpoint_targets,
             )
 
         if not parsed_config:
@@ -192,6 +227,7 @@ class HardeningService:
 
         for rule in rules:
             cat = rule.category.upper() if rule.category else "GENERAL"
+            scope_val = rule.scope.value if hasattr(rule.scope, "value") else str(rule.scope)
             item = {
                 "id": rule.id,
                 "standard_version": rule.standard_version,
@@ -200,6 +236,7 @@ class HardeningService:
                 "category": cat,
                 "standard": rule.standard,
                 "default_severity": rule.default_severity.value if hasattr(rule.default_severity, "value") else str(rule.default_severity),
+                "scope": scope_val,
                 "required_endpoint": rule.required_endpoint,
                 "is_active": rule.is_active,
             }
@@ -226,7 +263,6 @@ class HardeningService:
         devolviendo el resultado formateado para el frontend sin persistir en BD ni
         requerir conexión de red.
         """
-        # 1. Determinar el catálogo de reglas a evaluar (Prioridad estricta a Ad-Hoc si se envían reglas)
         if adhoc_rule_ids and len(adhoc_rule_ids) > 0:
             rules_to_run = await self.repository.get_rules_by_ids(
                 rule_ids=adhoc_rule_ids,
@@ -249,7 +285,6 @@ class HardeningService:
                 "No se encontraron reglas activas para evaluar contra este archivo de backup."
             )
 
-        # 2. Parsear el archivo .conf de FortiOS a la estructura CMDB esperada
         parser = FortiOSConfParser()
         parse_result = parser.parse(file_content)
 
@@ -258,13 +293,11 @@ class HardeningService:
                 "No se pudieron extraer secciones de configuración analizables del archivo de backup."
             )
 
-        # 3. Ejecución directa sobre el motor declarativo existente
         summary = self.evaluator.evaluate_rules(
             rules=rules_to_run,
             parsed_config=parse_result.cmdb_dump,
         )
 
-        # 4. Retornar payload compatible con el schema BackupAuditResponse
         return {
             "device_info": {
                 "model": parse_result.metadata.model or "FortiGate",

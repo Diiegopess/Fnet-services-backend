@@ -1,3 +1,5 @@
+# app/hardening/models.py
+
 import enum
 import uuid
 from datetime import datetime
@@ -48,6 +50,11 @@ class RuleSeverity(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
+class RuleScope(str, enum.Enum):
+    GLOBAL = "GLOBAL"
+    VDOM = "VDOM"
+
+
 # Tabla intermedia N:M
 profile_rules_association = Table(
     "hardening_profile_rules",
@@ -82,6 +89,12 @@ class RuleCatalog(Base):
         Enum(RuleSeverity, values_callable=lambda x: [e.value for e in x]),
         default=RuleSeverity.MEDIUM,
         nullable=False,
+    )
+    scope: Mapped[RuleScope] = mapped_column(
+        Enum(RuleScope, values_callable=lambda x: [e.value for e in x]),
+        default=RuleScope.VDOM,
+        nullable=False,
+        index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     required_endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -138,9 +151,6 @@ class AuditReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    
-    # Campo opcional para soportar análisis de archivos de backup offline
-    # Si la auditoría proviene de un archivo subido, device_id y vdom_id se guardan como None/NULL
     device_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("devices.id", ondelete="SET NULL"),
@@ -153,7 +163,6 @@ class AuditReport(Base):
         nullable=True,
         index=True,
     )
-
     execution_type: Mapped[ExecutionType] = mapped_column(
         Enum(ExecutionType, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
@@ -169,7 +178,6 @@ class AuditReport(Base):
     total_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_not_applicable: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # Vinculación formal con el usuario técnico que ejecutó o subió la auditoría
     executed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -183,7 +191,6 @@ class AuditReport(Base):
         "AuditFinding", back_populates="report", cascade="all, delete-orphan"
     )
 
-    # Relación ORM hacia User
     executor: Mapped[Optional[Any]] = relationship(
         "User", back_populates="executed_audits"
     )
@@ -218,7 +225,6 @@ class AuditFinding(Base):
 
     report: Mapped[AuditReport] = relationship("AuditReport", back_populates="findings")
 
-    # Clave Foránea Compuesta hacia RuleCatalog para mantener la consistencia
     __table_args__ = (
         ForeignKeyConstraint(
             ["rule_id", "standard_version"],

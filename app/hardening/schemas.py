@@ -8,6 +8,7 @@ from app.hardening.models import (
     ExecutionType,
     FindingStatus,
     ProfileType,
+    RuleScope,
     RuleSeverity,
 )
 
@@ -24,6 +25,7 @@ class RuleCatalogResponse(BaseModel):
     category: str
     standard: str
     default_severity: RuleSeverity
+    scope: RuleScope = RuleScope.VDOM
     required_endpoint: str
     is_active: bool = True
 
